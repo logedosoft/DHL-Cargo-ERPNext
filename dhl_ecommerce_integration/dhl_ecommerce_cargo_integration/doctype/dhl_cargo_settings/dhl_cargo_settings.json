@@ -6,11 +6,17 @@
  "engine": "InnoDB",
  "field_order": [
   "enabled",
+  "web_service_url",
   "sblogin_info_section",
   "customer_number",
-  "password",
   "client_id",
-  "client_secret"
+  "column_break_ygsc",
+  "password",
+  "client_secret",
+  "tbtoken_tab",
+  "jwt_expire_date",
+  "jwt_token",
+  "refresh_token"
  ],
  "fields": [
   {
@@ -43,13 +49,45 @@
    "fieldname": "client_secret",
    "fieldtype": "Password",
    "label": "client_secret"
+  },
+  {
+   "fieldname": "tbtoken_tab",
+   "fieldtype": "Tab Break",
+   "label": "Token"
+  },
+  {
+   "fieldname": "jwt_expire_date",
+   "fieldtype": "Datetime",
+   "label": "jwt_expire_date"
+  },
+  {
+   "fieldname": "jwt_token",
+   "fieldtype": "Small Text",
+   "label": "jwt_token",
+   "read_only": 1
+  },
+  {
+   "fieldname": "refresh_token",
+   "fieldtype": "Small Text",
+   "label": "refresh_token",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_ygsc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "<b>TEST:</b>https://testapi.mngkargo.com.tr<br>\n<b>LIVE:</b>https://api.mngkargo.com.tr",
+   "fieldname": "web_service_url",
+   "fieldtype": "Data",
+   "label": "Web Service URL"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-05-21 12:53:45.255836",
+ "modified": "2026-05-21 12:59:48.792048",
  "modified_by": "Administrator",
  "module": "DHL eCommerce Cargo Integration",
  "name": "DHL Cargo Settings",
