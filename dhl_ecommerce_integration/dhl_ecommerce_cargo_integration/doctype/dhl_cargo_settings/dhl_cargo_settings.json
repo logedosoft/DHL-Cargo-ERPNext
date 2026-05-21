@@ -6,6 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "enabled",
+  "enable_detailed_logs",
   "web_service_url",
   "sblogin_info_section",
   "customer_number",
@@ -87,13 +88,19 @@
    "fieldname": "btn_test_connection",
    "fieldtype": "Button",
    "label": "Test Connection"
+  },
+  {
+   "default": "0",
+   "fieldname": "enable_detailed_logs",
+   "fieldtype": "Check",
+   "label": "Enable Detailed Logs"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-05-21 14:56:34.117966",
+ "modified": "2026-05-21 17:01:30.970087",
  "modified_by": "Administrator",
  "module": "DHL eCommerce Cargo Integration",
  "name": "DHL Cargo Settings",

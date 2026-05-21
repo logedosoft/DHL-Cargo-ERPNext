@@ -4,8 +4,15 @@
 import frappe, json, requests
 from datetime import datetime
 from frappe import msgprint, _
+from frappe.utils import get_datetime_str
 
+@frappe.whitelist()
 def get_token():
+	dctResult = frappe._dict({
+		"op_result": False,
+		"op_message": ""
+	})
+
 	docDHLSettings = frappe.get_single("DHL Cargo Settings")
 	strTokenURL = docDHLSettings.web_service_url + "/mngapi/api/token"
 
@@ -23,6 +30,10 @@ def get_token():
 
 	try:
 		response = requests.post(strTokenURL, json=dctPayload, headers=dctHeaders, timeout=30)
+
+		if docDHLSettings.enable_detailed_logs:
+			frappe.log_error("DHL Get Token Response", frappe.as_json(response.json()))
+			
 		dctResponse = response.json()
 		strJWT = dctResponse.get("jwt")
 
@@ -31,26 +42,38 @@ def get_token():
 			docDHLSettings.refresh_token = dctResponse.get("refreshToken")
 			strExpireDate = dctResponse.get("jwtExpireDate")
 			if strExpireDate:
-				docDHLSettings.jwt_expire_date = datetime.strptime(strExpireDate, "%d.%m.%Y %H:%M:%S")
+				docDHLSettings.jwt_expire_date = datetime.strptime(strExpireDate, "%d.%m.%Y %H:%M:%S").strftime("%Y-%m-%d %H:%M:%S")#get_datetime_str(datetime.strptime(strExpireDate, "%d.%m.%Y %H:%M:%S"))
 			docDHLSettings.save(ignore_permissions=True)
-			dctResult = frappe._dict({
-				"op_result": True,
-				"op_message": ""
-			})
+			dctResult.op_result = True
+			dctResult.op_message = _("Token obtained")
 		else:
-			strHTTPMessage = dctResponse.get("httpMessage", "")
-			strMoreInfo = dctResponse.get("moreInformation", "")
-			strErrorMessage = " ".join(filter(None, [strHTTPMessage, strMoreInfo]))
-			dctResult = frappe._dict({
-				"op_result": False,
-				"op_message": strErrorMessage
-			})
+			strErrorMessage = ""
+			# Handle ERROR_1 format: {"error": {"Code": "...", "Message": "...", "Description": "..."}}
+			if "error" in dctResponse and isinstance(dctResponse["error"], dict):
+				error_dict = dctResponse["error"]
+				# Build a message from the error dict
+				parts = []
+				if error_dict.get("Code"):
+					parts.append(f"Error {error_dict['Code']}")
+				if error_dict.get("Message"):
+					parts.append(error_dict["Message"])
+				if error_dict.get("Description"):
+					parts.append(error_dict["Description"])
+				strErrorMessage = " - ".join(parts)
+			# Handle ERROR_2 format: {"httpCode": "...", "httpMessage": "...", "moreInformation": "..."}
+			elif "httpMessage" in dctResponse or "moreInformation" in dctResponse:
+				strHTTPMessage = dctResponse.get("httpMessage", "")
+				strMoreInfo = dctResponse.get("moreInformation", "")
+				strErrorMessage = " ".join(filter(None, [strHTTPMessage, strMoreInfo]))
+			# Fallback: if we still don't have a message, use a generic one
+			if not strErrorMessage:
+				strErrorMessage = "Unknown error"
+			dctResult.op_result = False
+			dctResult.op_message = strErrorMessage
 	except Exception:
 		frappe.log_error("DHL Get Token Error", frappe.get_traceback())
-		dctResult = frappe._dict({
-			"op_result": False,
-			"op_message": "Failed to obtain token — check Error Log for details"
-		})
+		dctResult.op_result = False
+		dctResult.op_message = "Failed to obtain token — check Error Log for details"
 
 	return dctResult
 
