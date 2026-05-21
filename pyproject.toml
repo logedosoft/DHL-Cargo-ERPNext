@@ -3,7 +3,7 @@ name = "dhl_ecommerce_integration"
 authors = [
     { name = "Logedosoft Business Solutions", email = "info@logedosoft.com"}
 ]
-description = "DHL eCommerce (MNG Kargo) REST API integration for ERPNext — automates shipment creation, barcode generation, and ZPL label printing from Delivery Notes."
+description = "DHL eCommerce (MNG Kargo) REST API integration for ERPNext — automates shipment creation and barcode generation from Delivery Notes."
 requires-python = ">=3.10"
 readme = "README.md"
 dynamic = ["version"]
