@@ -5,3 +5,10 @@
 tags
 node_modules
 __pycache__
+
+# AI / Editor tools
+.kilo/
+.kilocodeignore
+.emdash/
+.emdash.json
+.claude/
