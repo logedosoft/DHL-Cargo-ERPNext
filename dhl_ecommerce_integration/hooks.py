@@ -83,11 +83,12 @@ app_license = "mit"
 # ------------
 
 # before_install = "dhl_ecommerce_integration.install.before_install"
-# after_install = "dhl_ecommerce_integration.install.after_install"
+after_install = "dhl_ecommerce_integration.install.after_install"
 
 # Uninstallation
 # ------------
 
+before_uninstall = "dhl_ecommerce_integration.install.before_uninstall"
 # before_uninstall = "dhl_ecommerce_integration.uninstall.before_uninstall"
 # after_uninstall = "dhl_ecommerce_integration.uninstall.after_uninstall"
 
@@ -137,6 +138,11 @@ app_license = "mit"
 # ---------------
 # Hook on document methods and events
 
+doc_events = {
+	"Sales Order": {
+		"on_submit": "dhl_ecommerce_integration.utils.create_recipient"
+	}
+}
 # doc_events = {
 # 	"*": {
 # 		"on_update": "method",
