@@ -10,6 +10,7 @@
   "sblogin_info_section",
   "customer_number",
   "client_id",
+  "btn_test_connection",
   "column_break_ygsc",
   "password",
   "client_secret",
@@ -33,22 +34,22 @@
   {
    "fieldname": "customer_number",
    "fieldtype": "Data",
-   "label": "customer_number"
+   "label": "Customer Number"
   },
   {
    "fieldname": "password",
    "fieldtype": "Password",
-   "label": "password"
+   "label": "Password"
   },
   {
    "fieldname": "client_id",
    "fieldtype": "Data",
-   "label": "client_id"
+   "label": "Client ID"
   },
   {
    "fieldname": "client_secret",
    "fieldtype": "Password",
-   "label": "client_secret"
+   "label": "Client Secret"
   },
   {
    "fieldname": "tbtoken_tab",
@@ -81,13 +82,18 @@
    "fieldname": "web_service_url",
    "fieldtype": "Data",
    "label": "Web Service URL"
+  },
+  {
+   "fieldname": "btn_test_connection",
+   "fieldtype": "Button",
+   "label": "Test Connection"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-05-21 12:59:48.792048",
+ "modified": "2026-05-21 14:56:34.117966",
  "modified_by": "Administrator",
  "module": "DHL eCommerce Cargo Integration",
  "name": "DHL Cargo Settings",

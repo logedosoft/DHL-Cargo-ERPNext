@@ -4,6 +4,15 @@
 import frappe, json
 from frappe import msgprint, _
 
+def get_token():
+	dctResult = frappe._dict({
+		"op_result": False,
+		"op_message": ""
+	}
+	
+
+	return dctResult
+
 def create_recipient(doc, method):
 	# Create the recipient if DHL is active in DHL Cargo Settings
 	# Check if we already have a "dhl_customer_id" for the customer.
