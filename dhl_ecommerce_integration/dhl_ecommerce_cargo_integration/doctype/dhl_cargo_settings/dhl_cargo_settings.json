@@ -5,7 +5,12 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "enabled"
+  "enabled",
+  "sblogin_info_section",
+  "customer_number",
+  "password",
+  "client_id",
+  "client_secret"
  ],
  "fields": [
   {
@@ -13,13 +18,38 @@
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enabled"
+  },
+  {
+   "fieldname": "sblogin_info_section",
+   "fieldtype": "Section Break",
+   "label": "Login Info"
+  },
+  {
+   "fieldname": "customer_number",
+   "fieldtype": "Data",
+   "label": "customer_number"
+  },
+  {
+   "fieldname": "password",
+   "fieldtype": "Password",
+   "label": "password"
+  },
+  {
+   "fieldname": "client_id",
+   "fieldtype": "Data",
+   "label": "client_id"
+  },
+  {
+   "fieldname": "client_secret",
+   "fieldtype": "Password",
+   "label": "client_secret"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-05-21 12:28:20.908798",
+ "modified": "2026-05-21 12:53:45.255836",
  "modified_by": "Administrator",
  "module": "DHL eCommerce Cargo Integration",
  "name": "DHL Cargo Settings",
