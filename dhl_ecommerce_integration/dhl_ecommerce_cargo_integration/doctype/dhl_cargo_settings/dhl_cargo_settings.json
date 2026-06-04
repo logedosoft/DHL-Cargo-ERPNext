@@ -18,7 +18,11 @@
   "tbtoken_tab",
   "jwt_expire_date",
   "jwt_token",
-  "refresh_token"
+  "refresh_token",
+  "tbcity_tab",
+  "btn_get_cities_and_districts",
+  "cities",
+  "districts"
  ],
  "fields": [
   {
@@ -94,13 +98,35 @@
    "fieldname": "enable_detailed_logs",
    "fieldtype": "Check",
    "label": "Enable Detailed Logs"
+  },
+  {
+   "fieldname": "cities",
+   "fieldtype": "Table",
+   "label": "Cities",
+   "options": "DHL City"
+  },
+  {
+   "fieldname": "districts",
+   "fieldtype": "Table",
+   "label": "Districts",
+   "options": "DHL District"
+  },
+  {
+   "fieldname": "tbcity_tab",
+   "fieldtype": "Tab Break",
+   "label": "City - District"
+  },
+  {
+   "fieldname": "btn_get_cities_and_districts",
+   "fieldtype": "Button",
+   "label": "Refresh List"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-05-21 17:01:30.970087",
+ "modified": "2026-06-04 11:55:20.302186",
  "modified_by": "Administrator",
  "module": "DHL eCommerce Cargo Integration",
  "name": "DHL Cargo Settings",

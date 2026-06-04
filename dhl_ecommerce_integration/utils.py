@@ -77,16 +77,128 @@ def get_token():
 
 	return dctResult
 
+@frappe.whitelist()
+def get_cities_and_districts():
+	dctResult = frappe._dict({
+		"op_result": False,
+		"op_message": ""
+	})
+
+	try:
+		frappe.enqueue(
+			"dhl_ecommerce_integration.utils._refresh_cities_and_districts_background",
+			queue="long",
+			timeout=1400,
+			job_id="dhl_refresh_cities_and_districts"
+		)
+		dctResult.op_result = True
+		dctResult.op_message = "Refreshing cities and districts in the background. Check Error Log for progress."
+	except Exception:
+		frappe.log_error("DHL Enqueue Refresh Error", frappe.get_traceback())
+		dctResult.op_result = False
+		dctResult.op_message = "Failed to start background refresh — check Error Log for details"
+
+	return dctResult
+
+
+def _refresh_cities_and_districts_background():
+	docDHLSettings = frappe.get_single("DHL Cargo Settings")
+	strBaseURL = docDHLSettings.web_service_url
+
+	dctHeaders = {
+		"x-ibm-client-id": docDHLSettings.client_id,
+		"x-ibm-client-secret": docDHLSettings.get_password("client_secret"),
+		"Content-Type": "application/json"
+	}
+
+	try:
+		strCitiesURL = strBaseURL + "/mngapi/api/cbsinfoapi/getcities"
+		response = requests.get(strCitiesURL, headers=dctHeaders, timeout=30)
+		lstCities = response.json()
+
+		if docDHLSettings.enable_detailed_logs:
+			frappe.log_error("DHL Get Cities Response", frappe.as_json(lstCities))
+
+		# Preserve existing examples keyed by city code
+		dctExistingCityExamples = {}
+		for row in docDHLSettings.cities:
+			if row.code:
+				dctExistingCityExamples[row.code] = row.examples
+
+		# Preserve existing district examples keyed by "city_code|district_code"
+		dctExistingDistrictExamples = {}
+		for row in docDHLSettings.districts:
+			if row.city_code and row.code:
+				strKey = row.city_code + "|" + row.code
+				dctExistingDistrictExamples[strKey] = row.examples
+
+		lstNewCities = []
+		lstNewDistricts = []
+		dTotalCities = len(lstCities)
+
+		for dIndex, dctCity in enumerate(lstCities):
+			strCityCode = dctCity.get("code", "")
+			strCityName = dctCity.get("name", "")
+			if not strCityCode or not strCityName:
+				continue
+
+			lstNewCities.append({
+				"code": strCityCode,
+				"city_name": strCityName,
+				"examples": dctExistingCityExamples.get(strCityCode, "")
+			})
+
+			frappe.publish_progress(
+				percent=int(((dIndex + 1) / dTotalCities) * 100),
+				title="Refreshing Cities and Districts",
+				description="Fetching districts for " + strCityName + "..."
+			)
+
+			strDistrictsURL = strBaseURL + "/mngapi/api/cbsinfoapi/getdistricts/" + strCityCode
+			try:
+				dctDistrictResponse = requests.get(strDistrictsURL, headers=dctHeaders, timeout=30)
+				lstDistricts = dctDistrictResponse.json()
+
+				if docDHLSettings.enable_detailed_logs:
+					frappe.log_error("DHL Get Districts Response " + strCityCode, frappe.as_json(lstDistricts))
+
+				for dctDistrict in lstDistricts:
+					strDistrictCode = dctDistrict.get("code", "")
+					strDistrictName = dctDistrict.get("name", "")
+					if not strDistrictCode or not strDistrictName:
+						continue
+
+					strKey = strCityCode + "|" + strDistrictCode
+					lstNewDistricts.append({
+						"code": strDistrictCode,
+						"district_name": strDistrictName,
+						"city_code": strCityCode,
+						"city_name": strCityName,
+						"examples": dctExistingDistrictExamples.get(strKey, "")
+					})
+			except Exception:
+				frappe.log_error("DHL Get Districts Error " + strCityCode, frappe.get_traceback())
+
+		docDHLSettings.set("cities", lstNewCities)
+		docDHLSettings.set("districts", lstNewDistricts)
+		docDHLSettings.save(ignore_permissions=True)
+
+		frappe.log_error("DHL Refresh Cities and Districts", "Completed successfully")
+	except Exception:
+		frappe.log_error("DHL Refresh Cities and Districts Error", frappe.get_traceback())
+
+
 def create_recipient(doc, method):
 	# Create the recipient if DHL is active in DHL Cargo Settings
 	# Check if we already have a "dhl_customer_id" for the customer.
-	frappe.log_error("DHL Create Recipient", frappe.as_json(doc))
-	docDHLSettings = frappe.get_single("DHL Cargo Settings")
-	if docDHLSettings.enabled == 1:
-		frappe.log_error("DHL Recipient Created", frappe.as_json(doc))
-		strDHLCustomerID = frappe.db.get_value("Customer", doc.name, "dhl_customer_id")
-		if strDHLCustomerID == None or strDHLCustomerID == "":
-			# Create the recipient
-			frappe.log_error("DHL Recipient Created", frappe.as_json(doc))
-	else:
-		frappe.log_error("DHL Recipient Already Exists", frappe.as_json(doc))
+	if method == "on_submit":
+		frappe.log_error("DHL Create Recipient", frappe.as_json(doc))
+		docDHLSettings = frappe.get_single("DHL Cargo Settings")
+		if docDHLSettings.enabled == 1:
+			frappe.log_error("DHL Recipient Create Started", frappe.as_json(doc))
+			strDHLCustomerID = frappe.db.get_value("Customer", doc.name, "dhl_customer_id")
+			if strDHLCustomerID == None or strDHLCustomerID == "":
+				# Create the recipient
+				frappe.log_error("DHL Recipient Created", frappe.as_json(doc))
+		else:
+			frappe.log_error("DHL Recipient Already Exists", frappe.as_json(doc))

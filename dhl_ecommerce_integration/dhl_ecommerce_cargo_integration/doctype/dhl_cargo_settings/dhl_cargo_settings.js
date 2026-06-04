@@ -12,5 +12,17 @@ frappe.ui.form.on("DHL Cargo Settings", {
 				}
 			}
 		});
+	},
+	btn_get_cities_and_districts(frm) {
+		frappe.call({
+			method: "dhl_ecommerce_integration.utils.get_cities_and_districts",
+			callback: function(r) {
+				if (r.message.op_result == false) {
+					frappe.throw(r.message.op_message);
+				} else {
+					frappe.show_alert(r.message.op_message);
+				}
+			}
+		});
 	}
 });
