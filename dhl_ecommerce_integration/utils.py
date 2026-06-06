@@ -117,6 +117,11 @@ def get_cities_and_districts():
 
 
 def _refresh_cities_and_districts_background():
+	dctResult = frappe._dict({
+		"op_result": False,
+		"op_message": ""
+	})
+
 	docDHLSettings = frappe.get_single("DHL Cargo Settings")
 	strBaseURL = docDHLSettings.web_service_url
 
@@ -198,128 +203,122 @@ def _refresh_cities_and_districts_background():
 		docDHLSettings.set("districts", lstNewDistricts)
 		docDHLSettings.save(ignore_permissions=True)
 
-		frappe.log_error("DHL Refresh Cities and Districts", "Completed successfully")
+		dctResult.op_result = True
+		dctResult.op_message = "DHL Refresh Cities and Districts completed successfully."
+		#frappe.log_error("DHL Refresh Cities and Districts", "Completed successfully")
 	except Exception:
-		frappe.log_error("DHL Refresh Cities and Districts Error", frappe.get_traceback())
-
+		dctResult.op_result = False
+		dctResult.op_message = "City and District Refresh Failed! " + frappe.get_traceback()
+		frappe.log_error("DHL Refresh Cities and Districts Error", dctResult.op_message)
+		
+	docDHLSettings.add_comment("Comment", dctResult.op_message)
 
 def create_recipient(doc, method):
 	# Create the recipient if DHL is active in DHL Cargo Settings
 	# Check if we already have a "dhl_customer_id" for the customer.
-	if method != "on_submit":
-		return
+	dctResult = frappe._dict({
+		"op_result": False,
+		"op_message": ""
+	})
 
-	docDHLSettings = frappe.get_single("DHL Cargo Settings")
-	if not docDHLSettings.enabled:
-		return
+	if method == "on_submit":
+		docDHLSettings = frappe.get_single("DHL Cargo Settings")
+		if docDHLSettings.enabled:
+			docAddress = frappe.get_doc("Address", doc.shipping_address_name)
 
-	strDHLCustomerID = frappe.db.get_value("Customer", doc.customer, "dhl_customer_id")
-	if strDHLCustomerID:
-		return
+			strCityCode = None
+			for row in docDHLSettings.cities:
+				if row.city_name and docAddress.city and row.city_name == docAddress.city:
+					strCityCode = row.code
+					break
 
-	strAddressName = doc.shipping_address_name or doc.customer_address
-	if not strAddressName:
-		frappe.log_error("DHL Create Recipient Error", "No address found for Sales Order " + doc.name)
-		return
-
-	docAddress = frappe.get_doc("Address", strAddressName)
-
-	strCityCode = None
-	for row in docDHLSettings.cities:
-		if row.city_name and docAddress.city and row.city_name.strip().lower() == docAddress.city.strip().lower():
-			strCityCode = row.code
-			break
-
-	if not strCityCode:
-		frappe.log_error("DHL Create Recipient Error", "City not mapped: " + (docAddress.city or "") + " for SO " + doc.name)
-		return
-
-	strDistrictCode = None
-	for row in docDHLSettings.districts:
-		if (row.city_code == strCityCode
-				and row.district_name
-				and docAddress.county
-				and row.district_name.strip().lower() == docAddress.county.strip().lower()):
-			strDistrictCode = row.code
-			break
-
-	if not strDistrictCode:
-		frappe.log_error("DHL Create Recipient Error", "District not mapped: " + (docAddress.county or "") + " for SO " + doc.name)
-		return
-
-	strMobile = docAddress.phone or ""
-	strEmail = docAddress.email_id or ""
-
-	if not strMobile:
-		strMobile = docDHLSettings.default_phone or ""
-	if not strEmail:
-		strEmail = docDHLSettings.default_email or ""
-
-	dctTokenResult = get_token()
-	if not dctTokenResult.op_result:
-		frappe.log_error("DHL Create Recipient Error", "Token failed: " + dctTokenResult.op_message)
-		return
-
-	strCreateURL = docDHLSettings.web_service_url + "/mngapi/api/pluscmdapi/createRecipient"
-
-	dctPayload = {
-		"recipient": {
-			"customerId": "",
-			"refCustomerId": doc.customer,
-			"cityCode": int(strCityCode),
-			"districtCode": int(strDistrictCode),
-			"cityName": docAddress.city or "",
-			"districtName": docAddress.county or "",
-			"address": docAddress.address_line1 or "",
-			"fullName": doc.customer_name or "",
-			"mobilePhoneNumber": strMobile,
-			"bussinessPhoneNumber": "",
-			"homePhoneNumber": "",
-			"email": strEmail,
-			"taxOffice": "",
-			"taxNumber": doc.tax_id or ""
-		}
-	}
-
-	dctHeaders = {
-		"x-ibm-client-id": docDHLSettings.client_id,
-		"x-ibm-client-secret": docDHLSettings.get_password("client_secret"),
-		"Content-Type": "application/json",
-		"Authorization": "Bearer " + (docDHLSettings.jwt_token or "")
-	}
-
-	try:
-		response = requests.post(strCreateURL, json=dctPayload, headers=dctHeaders, timeout=30)
-		dctResponse = response.json()
-
-		if docDHLSettings.enable_detailed_logs:
-			frappe.log_error("DHL Create Recipient Response", frappe.as_json(dctResponse))
-
-		strNewCustomerId = dctResponse.get("customerId") if isinstance(dctResponse, dict) else None
-
-		if strNewCustomerId:
-			docCustomer = frappe.get_doc("Customer", doc.customer)
-			docCustomer.dhl_customer_id = strNewCustomerId
-			docCustomer.save(ignore_permissions=True)
-		else:
-			strErrorMessage = ""
-			if "error" in dctResponse and isinstance(dctResponse["error"], dict):
-				error_dict = dctResponse["error"]
-				parts = []
-				if error_dict.get("Code"):
-					parts.append("Error " + error_dict["Code"])
-				if error_dict.get("Message"):
-					parts.append(error_dict["Message"])
-				if error_dict.get("Description"):
-					parts.append(error_dict["Description"])
-				strErrorMessage = " - ".join(parts)
-			elif "httpMessage" in dctResponse or "moreInformation" in dctResponse:
-				strHTTPMessage = dctResponse.get("httpMessage", "")
-				strMoreInfo = dctResponse.get("moreInformation", "")
-				strErrorMessage = " ".join(filter(None, [strHTTPMessage, strMoreInfo]))
+			if not strCityCode:
+				dctResult.op_result = False
+				dctResult.op_message = "City not mapped in DHL Cargo Settings: {0}  for Sales Order {1}!".format(docAddress.city or "", doc.name)
+				frappe.log_error("DHL Create Recipient Error", dctResult.op_message)
 			else:
-				strErrorMessage = "Unknown error"
+				strDistrictCode = None
+				for row in docDHLSettings.districts:
+					if (row.city_code == strCityCode and row.district_name and docAddress.county and row.district_name == docAddress.county):
+						strDistrictCode = row.code
+						break
 
-			frappe.log_error("DHL Create Recipient Error", strErrorMessage + " | Response: " + frappe.as_json(dctResponse))
-	except Exception:
-		frappe.log_error("DHL Create Recipient Error", frappe.get_traceback())
+				if not strDistrictCode:
+					dctResult.op_result = False
+					dctResult.op_message = "District not mapped in DHL Cargo Settings: {0} for Sales Order {1}!".format(docAddress.county or "", doc.name)
+					frappe.log_error("DHL Create Recipient Error", dctResult.op_message)
+				else:
+					dctTokenResult = get_token()
+					if not dctTokenResult.op_result:
+						dctResult.op_result = False
+						dctResult.op_message = "Get Token failed: " + dctTokenResult.op_message
+						frappe.log_error("DHL Create Recipient Error", dctResult.op_message)
+					else:
+						strCreateURL = docDHLSettings.web_service_url + "/mngapi/api/pluscmdapi/createRecipient"
+
+						strMobile = docAddress.phone or docDHLSettings.default_phone or ""
+						strEmail = docAddress.email_id or docDHLSettings.default_email or ""
+
+						dctPayload = {
+							"recipient": {
+								"customerId": "",
+								"refCustomerId": doc.customer,
+								"cityCode": int(strCityCode),
+								"districtCode": int(strDistrictCode),
+								"cityName": docAddress.city or "",
+								"districtName": docAddress.county or "",
+								"address": docAddress.address_line1 or "",
+								"fullName": doc.customer_name or "",
+								"mobilePhoneNumber": strMobile,
+								"bussinessPhoneNumber": "",
+								"homePhoneNumber": "",
+								"email": strEmail,
+								"taxOffice": "",
+								"taxNumber": doc.tax_id or ""
+							}
+						}
+
+						dctHeaders = {
+							"x-ibm-client-id": docDHLSettings.client_id,
+							"x-ibm-client-secret": docDHLSettings.get_password("client_secret"),
+							"Content-Type": "application/json",
+							"Authorization": "Bearer " + (docDHLSettings.jwt_token or "")
+						}
+
+						try:
+							response = requests.post(strCreateURL, json=dctPayload, headers=dctHeaders, timeout=30)
+							dctResponse = response.json()
+
+							if docDHLSettings.enable_detailed_logs:
+								frappe.log_error("DHL Create Recipient Response", frappe.as_json(dctResponse))
+
+							strNewCustomerId = dctResponse.get("customerId") if isinstance(dctResponse, dict) else None
+
+							if strNewCustomerId:
+								docCustomer = frappe.get_doc("Customer", doc.customer)
+								docCustomer.dhl_customer_id = strNewCustomerId
+								docCustomer.save(ignore_permissions=True)
+							else:
+								strErrorMessage = ""
+								if "error" in dctResponse and isinstance(dctResponse["error"], dict):
+									error_dict = dctResponse["error"]
+									parts = []
+									if error_dict.get("Code"):
+										parts.append("Error " + error_dict["Code"])
+									if error_dict.get("Message"):
+										parts.append(error_dict["Message"])
+									if error_dict.get("Description"):
+										parts.append(error_dict["Description"])
+									strErrorMessage = " - ".join(parts)
+								elif "httpMessage" in dctResponse or "moreInformation" in dctResponse:
+									strHTTPMessage = dctResponse.get("httpMessage", "")
+									strMoreInfo = dctResponse.get("moreInformation", "")
+									strErrorMessage = " ".join(filter(None, [strHTTPMessage, strMoreInfo]))
+								else:
+									strErrorMessage = "Unknown error"
+
+								frappe.log_error("DHL Create Recipient Error", strErrorMessage + " | Response: " + frappe.as_json(dctResponse))
+						except Exception:
+							frappe.log_error("DHL Create Recipient Error", frappe.get_traceback())
+
+	return dctResult
