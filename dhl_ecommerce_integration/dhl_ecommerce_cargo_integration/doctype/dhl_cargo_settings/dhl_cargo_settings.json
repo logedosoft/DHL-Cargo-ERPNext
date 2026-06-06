@@ -7,6 +7,7 @@
  "field_order": [
   "enabled",
   "enable_detailed_logs",
+  "sales_order_creates_recipient",
   "web_service_url",
   "column_break_khji",
   "default_phone",
@@ -137,13 +138,19 @@
    "fieldname": "default_email",
    "fieldtype": "Data",
    "label": "Default Email"
+  },
+  {
+   "default": "0",
+   "fieldname": "sales_order_creates_recipient",
+   "fieldtype": "Check",
+   "label": "Sales Order Creates Recipient"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-06 19:04:28.806792",
+ "modified": "2026-06-06 19:52:10.574627",
  "modified_by": "Administrator",
  "module": "DHL eCommerce Cargo Integration",
  "name": "DHL Cargo Settings",

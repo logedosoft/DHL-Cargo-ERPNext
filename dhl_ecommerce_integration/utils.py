@@ -215,7 +215,6 @@ def _refresh_cities_and_districts_background():
 
 def create_recipient(doc, method):
 	# Create the recipient if DHL is active in DHL Cargo Settings
-	# Check if we already have a "dhl_customer_id" for the customer.
 	dctResult = frappe._dict({
 		"op_result": False,
 		"op_message": ""
@@ -223,7 +222,7 @@ def create_recipient(doc, method):
 
 	if method == "on_submit":
 		docDHLSettings = frappe.get_single("DHL Cargo Settings")
-		if docDHLSettings.enabled:
+		if docDHLSettings.enabled and docDHLSettings.sales_order_creates_recipient:
 			docAddress = frappe.get_doc("Address", doc.shipping_address_name)
 
 			strCityCode = None
@@ -258,23 +257,24 @@ def create_recipient(doc, method):
 
 						strMobile = docAddress.phone or docDHLSettings.default_phone or ""
 						strEmail = docAddress.email_id or docDHLSettings.default_email or ""
+						docCustomer = frappe.get_doc("Customer", doc.customer)
 
 						dctPayload = {
 							"recipient": {
 								"customerId": "",
-								"refCustomerId": doc.customer,
+								"refCustomerId": "",
 								"cityCode": int(strCityCode),
 								"districtCode": int(strDistrictCode),
 								"cityName": docAddress.city or "",
 								"districtName": docAddress.county or "",
-								"address": docAddress.address_line1 or "",
+								"address": (docAddress.address_line1 or "") + (docAddress.address_line2 or ""),
 								"fullName": doc.customer_name or "",
 								"mobilePhoneNumber": strMobile,
 								"bussinessPhoneNumber": "",
 								"homePhoneNumber": "",
 								"email": strEmail,
-								"taxOffice": "",
-								"taxNumber": doc.tax_id or ""
+								"taxOffice": docCustomer.custom_tax_office or "",
+								"taxNumber": docCustomer.tax_id or ""
 							}
 						}
 
@@ -287,38 +287,41 @@ def create_recipient(doc, method):
 
 						try:
 							response = requests.post(strCreateURL, json=dctPayload, headers=dctHeaders, timeout=30)
-							dctResponse = response.json()
 
 							if docDHLSettings.enable_detailed_logs:
-								frappe.log_error("DHL Create Recipient Response", frappe.as_json(dctResponse))
+								frappe.log_error("DHL Create Recipient Response", frappe.as_json({
+									"status_code": response.status_code,
+									"headers": dict(response.headers),
+									"body": response.text
+								}))
 
-							strNewCustomerId = dctResponse.get("customerId") if isinstance(dctResponse, dict) else None
-
-							if strNewCustomerId:
-								docCustomer = frappe.get_doc("Customer", doc.customer)
-								docCustomer.dhl_customer_id = strNewCustomerId
-								docCustomer.save(ignore_permissions=True)
-							else:
-								strErrorMessage = ""
-								if "error" in dctResponse and isinstance(dctResponse["error"], dict):
-									error_dict = dctResponse["error"]
-									parts = []
-									if error_dict.get("Code"):
-										parts.append("Error " + error_dict["Code"])
-									if error_dict.get("Message"):
-										parts.append(error_dict["Message"])
-									if error_dict.get("Description"):
-										parts.append(error_dict["Description"])
-									strErrorMessage = " - ".join(parts)
-								elif "httpMessage" in dctResponse or "moreInformation" in dctResponse:
-									strHTTPMessage = dctResponse.get("httpMessage", "")
-									strMoreInfo = dctResponse.get("moreInformation", "")
-									strErrorMessage = " ".join(filter(None, [strHTTPMessage, strMoreInfo]))
+							if response.status_code == 200:
+								dctResult.op_result = True
+								dctResult.op_message = "Recipient created successfully"
+							elif response.status_code == 401:
+								dctResult.op_result = False
+								www_auth = response.headers.get("www-authenticate", "")
+								if "invalid_token" in www_auth:
+									dctResult.op_message = "Authentication failed: Token expired or invalid. Please re-authenticate."
 								else:
-									strErrorMessage = "Unknown error"
-
-								frappe.log_error("DHL Create Recipient Error", strErrorMessage + " | Response: " + frappe.as_json(dctResponse))
+									dctResult.op_message = "Authentication failed (401): " + www_auth
+								frappe.log_error("DHL Create Recipient HEADER_ERROR", dctResult.op_message)
+							elif response.status_code == 404:
+								dctResult.op_result = False
+								dctResponse = response.json()
+								strHTTPMessage = dctResponse.get("httpMessage", "")
+								strMoreInfo = dctResponse.get("moreInformation", "")
+								strErrorMessage = " ".join(filter(None, [strHTTPMessage, strMoreInfo]))
+								dctResult.op_message = "RESPOND_ERROR: " + (strErrorMessage or "Not Found")
+								frappe.log_error("DHL Create Recipient RESPOND_ERROR", dctResult.op_message)
+							else:
+								dctResult.op_result = False
+								dctResult.op_message = "HTTP " + str(response.status_code) + ": " + response.text
+								frappe.log_error("DHL Create Recipient Error", dctResult.op_message)
 						except Exception:
-							frappe.log_error("DHL Create Recipient Error", frappe.get_traceback())
+							dctResult.op_result = False
+							dctResult.op_message = "Exception occurred during createRecipient call. " + frappe.get_traceback()
+							frappe.log_error("DHL Create Recipient Exception", dctResult.op_message)
 
+	doc.add_comment("Comment", dctResult.op_message)
 	return dctResult
