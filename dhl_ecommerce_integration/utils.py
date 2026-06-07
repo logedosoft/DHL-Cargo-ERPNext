@@ -379,6 +379,9 @@ def create_order(strDeliveryNoteName, lstParcels):
 		"op_message": ""
 	})
 
+	if isinstance(lstParcels, str):
+		lstParcels = json.loads(lstParcels)
+
 	docDHLSettings = frappe.get_single("DHL Cargo Settings")
 	if not docDHLSettings.enabled:
 		frappe.throw("DHL Cargo Settings is not enabled!")
@@ -434,7 +437,7 @@ def _build_create_order_payload(docDN, lstParcels):
 			break
 
 	lstItemGroups = list(dict.fromkeys([item.item_group for item in docDN.items if item.item_group]))
-	strContent = " / ".join(lstItemGroups)[:200]
+	strContent = " ".join(lstItemGroups)[:200]
 	strFirstItemGroup = docDN.items[0].item_group if docDN.items else ""
 	strReferenceId = docDN.name
 

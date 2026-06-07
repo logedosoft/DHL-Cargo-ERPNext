@@ -43,6 +43,9 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
+doctype_js = {
+	"Delivery Note" : "public/js/delivery_note.js"
+	}
 # doctype_js = {"doctype" : "public/js/doctype.js"}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -144,6 +147,9 @@ before_uninstall = "dhl_ecommerce_integration.install.before_uninstall"
 doc_events = {
 	"Sales Order": {
 		"on_submit": "dhl_ecommerce_integration.utils.create_recipient"
+	},
+	"Address": {
+		"validate": "dhl_ecommerce_integration.utils.validate_address"
 	}
 }
 # doc_events = {
