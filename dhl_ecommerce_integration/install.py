@@ -79,10 +79,10 @@ def ensure_delivery_method_has_dhl():
 
     if custom_field_name:
         custom_field = frappe.get_doc("Custom Field", custom_field_name)
-        options = split_options(custom_field.options)
+        has_leading_blank, options = split_options(custom_field.options)
 
         if new_option not in options:
-            custom_field.options = "\n".join(options + [new_option])
+            custom_field.options = build_options(has_leading_blank, options + [new_option])
             custom_field.save(ignore_permissions=True)
             frappe.clear_cache(doctype=doctype)
 
@@ -97,12 +97,12 @@ def ensure_delivery_method_has_dhl():
         )
         return
 
-    options = split_options(docfield.options)
+    has_leading_blank, options = split_options(docfield.options)
 
     if new_option in options:
         return
 
-    new_value = "\n".join(options + [new_option])
+    new_value = build_options(has_leading_blank, options + [new_option])
 
     property_setter_name = frappe.db.get_value(
         "Property Setter",
@@ -135,7 +135,21 @@ def ensure_delivery_method_has_dhl():
 
 
 def split_options(options):
-    return [row.strip() for row in (options or "").split("\n") if row.strip()]
+    """Returns (has_leading_blank, list_of_non_empty_options).
+    Preserves the leading empty line that Select fields use for a blank default.
+    """
+    raw = (options or "").split("\n")
+    has_leading_blank = len(raw) > 0 and raw[0].strip() == ""
+    non_empty = [row.strip() for row in raw if row.strip()]
+    return has_leading_blank, non_empty
+
+
+def build_options(has_leading_blank, options):
+    """Rebuilds the options string, re-adding the leading blank if it was present."""
+    result = "\n".join(options)
+    if has_leading_blank:
+        result = "\n" + result
+    return result
 
 
 def seed_dhl_delivery_types():
