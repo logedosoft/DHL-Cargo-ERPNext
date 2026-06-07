@@ -12,6 +12,8 @@
   "column_break_khji",
   "default_phone",
   "default_email",
+  "payment_type",
+  "delivery_type",
   "sblogin_info_section",
   "customer_number",
   "client_id",
@@ -144,13 +146,25 @@
    "fieldname": "sales_order_creates_recipient",
    "fieldtype": "Check",
    "label": "Sales Order Creates Recipient"
+  },
+  {
+   "fieldname": "payment_type",
+   "fieldtype": "Link",
+   "label": "Payment Type",
+   "options": "DHL Payment Type"
+  },
+  {
+   "fieldname": "delivery_type",
+   "fieldtype": "Link",
+   "label": "Delivery Type",
+   "options": "DHL Delivery Type"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-06 19:52:10.574627",
+ "modified": "2026-06-07 12:51:41.264954",
  "modified_by": "Administrator",
  "module": "DHL eCommerce Cargo Integration",
  "name": "DHL Cargo Settings",

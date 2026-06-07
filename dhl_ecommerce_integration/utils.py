@@ -1,8 +1,8 @@
 # Copyright (c) 2026, Logedosoft Business Solutions and contributors
 # For license information, please see license.txt
 
-import frappe, json, requests
-from datetime import datetime
+import frappe, json, requests, base64
+from datetime import datetime, timedelta
 from frappe import msgprint, _
 from frappe.utils import get_datetime_str
 
@@ -16,6 +16,26 @@ def uppercase_tr(s):
     
     # 2. Apply translation, then standard upper() for the rest (a-z)
     return s.translate(tr).upper()
+
+def _is_jwt_exp_valid(strJWT):
+	"""Decode the JWT's exp claim and check if the token is still valid.
+	Returns True if valid (or if decoding fails — let the API validate).
+	Returns False only when the JWT exp is definitively in the past."""
+	blnValid = True
+	try:
+		lstParts = strJWT.split(".")
+		if len(lstParts) >= 2:
+			strPadded = lstParts[1] + "=" * (4 - len(lstParts[1]) % 4)
+			dctPayload = json.loads(base64.urlsafe_b64decode(strPadded))
+			if "exp" in dctPayload:
+				dtExpUTC = datetime.utcfromtimestamp(dctPayload["exp"])
+				# Add 5-minute safety margin — refresh before actual expiry
+				dtExpWithMargin = dtExpUTC + timedelta(minutes=5)
+				blnValid = datetime.utcnow() < dtExpWithMargin
+	except Exception:
+		# If decoding fails, don't block — let the API validate
+		pass
+	return blnValid
 
 @frappe.whitelist()
 def get_token(blnForce=False):
@@ -31,11 +51,28 @@ def get_token(blnForce=False):
 	if not blnForce:
 		strExistingToken = docDHLSettings.jwt_token or ""
 		strExpireDate = docDHLSettings.jwt_expire_date or ""
-		if strExistingToken and strExpireDate and strExpireDate > frappe.utils.now():
-			dctResult.op_result = True
-			dctResult.op_message = _("Token is valid")
-			dctResult.token = strExistingToken
-			return dctResult
+		if strExistingToken and strExpireDate:
+			# FIX #1: Use proper datetime comparison instead of fragile string comparison
+			# FIX #2: Also decode JWT exp claim as authoritative source — the jwtExpireDate
+			# field from the API may not exactly match the JWT's embedded exp claim
+			blnCacheValid = False
+			try:
+				dtExpire = datetime.strptime(strExpireDate, "%Y-%m-%d %H:%M:%S")
+				dtNow = datetime.strptime(frappe.utils.now()[:19], "%Y-%m-%d %H:%M:%S")
+				blnCacheValid = dtExpire > dtNow
+			except Exception:
+				blnCacheValid = False
+
+			# Decode JWT exp claim for additional validation — it is the authoritative
+			# expiry that the API gateway actually checks
+			if blnCacheValid:
+				blnCacheValid = _is_jwt_exp_valid(strExistingToken)
+
+			if blnCacheValid:
+				dctResult.op_result = True
+				dctResult.op_message = _("Token is valid")
+				dctResult.token = strExistingToken
+				return dctResult
 
 	strTokenURL = docDHLSettings.web_service_url + "/mngapi/api/token"
 
@@ -225,7 +262,6 @@ def _refresh_cities_and_districts_background():
 	docDHLSettings.add_comment("Comment", dctResult.op_message)
 
 def create_recipient(doc, method):
-	# Create the recipient if DHL is active in DHL Cargo Settings
 	dctResult = frappe._dict({
 		"op_result": False,
 		"op_message": ""
@@ -245,8 +281,7 @@ def create_recipient(doc, method):
 					break
 
 			if not strCityCode:
-				dctResult.op_result = False
-				dctResult.op_message = "City not mapped in DHL Cargo Settings: {0}  for Sales Order {1}!".format(docAddress.city or "", doc.name)
+				dctResult.op_message = "City not mapped in DHL Cargo Settings: {0} for Sales Order {1}!".format(docAddress.city or "", doc.name)
 				frappe.log_error("DHL Create Recipient Error", dctResult.op_message)
 			else:
 				strDistrictCode = None
@@ -256,97 +291,85 @@ def create_recipient(doc, method):
 						break
 
 				if not strDistrictCode:
-					dctResult.op_result = False
 					dctResult.op_message = "District not mapped in DHL Cargo Settings: {0} for Sales Order {1}!".format(docAddress.county or "", doc.name)
 					frappe.log_error("DHL Create Recipient Error", dctResult.op_message)
 				else:
+					# get_token() handles all cache/expiry/refresh logic internally
 					dctTokenResult = get_token()
 					if not dctTokenResult.op_result:
-						dctResult.op_result = False
 						dctResult.op_message = "Get Token failed: " + dctTokenResult.op_message
 						frappe.log_error("DHL Create Recipient Error", dctResult.op_message)
 					else:
-						strCreateURL = docDHLSettings.web_service_url + "/mngapi/api/pluscmdapi/createRecipient"
-
-						strMobile = docAddress.phone or docDHLSettings.default_phone or ""
-						strEmail = docAddress.email_id or docDHLSettings.default_email or ""
-						docCustomer = frappe.get_doc("Customer", doc.customer)
-
-						dctPayload = {
-							"recipient": {
-								"customerId": "",
-								"refCustomerId": "",
-								"cityCode": int(strCityCode),
-								"districtCode": int(strDistrictCode),
-								"cityName": docAddress.city or "",
-								"districtName": docAddress.county or "",
-								"address": (docAddress.address_line1 or "") + (docAddress.address_line2 or ""),
-								"fullName": doc.customer_name or "",
-								"mobilePhoneNumber": strMobile,
-								"bussinessPhoneNumber": "",
-								"homePhoneNumber": "",
-								"email": strEmail,
-								"taxOffice": docCustomer.custom_tax_office or "",
-								"taxNumber": docCustomer.tax_id or ""
-							}
-						}
-
-						dctHeaders = {
-							"x-ibm-client-id": docDHLSettings.client_id,
-							"x-ibm-client-secret": docDHLSettings.get_password("client_secret"),
-							"Content-Type": "application/json",
-							"Authorization": "Bearer " + (dctTokenResult.token or "")
-						}
-
-						try:
-							response = requests.post(strCreateURL, json=dctPayload, headers=dctHeaders, timeout=30)
-
-							if docDHLSettings.enable_detailed_logs:
-								frappe.log_error("DHL Create Recipient Response", frappe.as_json({
-									"status_code": response.status_code,
-									"headers": dict(response.headers),
-									"body": response.text
-								}))
-
-							if response.status_code == 200:
-								dctResult.op_result = True
-								dctResult.op_message = "Recipient created successfully"
-							elif response.status_code == 401:
-								# Token may have expired between cache check and API call — force-refresh and retry once
-								dctRetryToken = get_token(blnForce=True)
-								if dctRetryToken.op_result:
-									dctHeaders["Authorization"] = "Bearer " + (dctRetryToken.token or "")
-									response = requests.post(strCreateURL, json=dctPayload, headers=dctHeaders, timeout=30)
-
-								if response.status_code == 200:
-									dctResult.op_result = True
-									dctResult.op_message = "Recipient created successfully (after token refresh)"
-								else:
-									dctResult.op_result = False
-									www_auth = response.headers.get("www-authenticate", "")
-									if "invalid_token" in www_auth:
-										dctResult.op_message = "Authentication failed: Token expired or invalid. Please re-authenticate."
-									else:
-										dctResult.op_message = "Authentication failed (401): " + www_auth
-									frappe.log_error("DHL Create Recipient HEADER_ERROR", dctResult.op_message)
-							elif response.status_code == 404:
-								dctResult.op_result = False
-								dctResponse = response.json()
-								strHTTPMessage = dctResponse.get("httpMessage", "")
-								strMoreInfo = dctResponse.get("moreInformation", "")
-								strErrorMessage = " ".join(filter(None, [strHTTPMessage, strMoreInfo]))
-								dctResult.op_message = "RESPOND_ERROR: " + (strErrorMessage or "Not Found")
-								frappe.log_error("DHL Create Recipient RESPOND_ERROR", dctResult.op_message)
-							else:
-								dctResult.op_result = False
-								dctResult.op_message = "HTTP " + str(response.status_code) + ": " + response.text
-								frappe.log_error("DHL Create Recipient Error", dctResult.op_message)
-						except Exception:
-							dctResult.op_result = False
-							dctResult.op_message = "Exception occurred during createRecipient call. " + frappe.get_traceback()
-							frappe.log_error("DHL Create Recipient Exception", dctResult.op_message)
+						dctResult = _send_create_recipient(doc, docDHLSettings, docAddress, strCityCode, strDistrictCode, dctTokenResult.token)
 
 	doc.add_comment("Comment", dctResult.op_message)
+	return dctResult
+
+
+def _send_create_recipient(doc, docDHLSettings, docAddress, strCityCode, strDistrictCode, strToken):
+	dctResult = frappe._dict({
+		"op_result": False,
+		"op_message": ""
+	})
+
+	strCreateURL = docDHLSettings.web_service_url + "/mngapi/api/pluscmdapi/createRecipient"
+
+	strMobile = docAddress.phone or docDHLSettings.default_phone or ""
+	strEmail = docAddress.email_id or docDHLSettings.default_email or ""
+	docCustomer = frappe.get_doc("Customer", doc.customer)
+
+	strTaxOffice = (docCustomer.custom_tax_office or "")[:20]
+	strTaxNumber = (docCustomer.tax_id or "")[:20]
+
+	dctPayload = {
+		"recipient": {
+			"customerId": "",
+			"refCustomerId": "",
+			"cityCode": int(strCityCode),
+			"districtCode": int(strDistrictCode),
+			"cityName": docAddress.city or "",
+			"districtName": docAddress.county or "",
+			"address": (docAddress.address_line1 or "") + (docAddress.address_line2 or ""),
+			"fullName": doc.customer_name or "",
+			"mobilePhoneNumber": strMobile,
+			"bussinessPhoneNumber": "",
+			"homePhoneNumber": "",
+			"email": strEmail,
+			"taxOffice": strTaxOffice,
+			"taxNumber": strTaxNumber
+		}
+	}
+
+	dctHeaders = {
+		"x-ibm-client-id": docDHLSettings.client_id,
+		"x-ibm-client-secret": docDHLSettings.get_password("client_secret"),
+		"Content-Type": "application/json",
+		"Authorization": "Bearer " + strToken
+	}
+
+	try:
+		response = requests.post(strCreateURL, json=dctPayload, headers=dctHeaders, timeout=30)
+
+		if docDHLSettings.enable_detailed_logs:
+			frappe.log_error("DHL Create Recipient Response", frappe.as_json({
+				"status_code": response.status_code,
+				"headers": dict(response.headers),
+				"body": response.text
+			}))
+
+		dctResult.status_code = response.status_code
+
+		if response.status_code == 200:
+			dctResult.op_result = True
+			dctResult.op_message = "Recipient created successfully"
+		else:
+			dctResult.op_message = "HTTP {0}: {1}".format(response.status_code, response.text[:500])
+			frappe.log_error("DHL Create Recipient Error", dctResult.op_message)
+	except Exception:
+		dctResult.status_code = 0
+		dctResult.op_message = "Exception during createRecipient: " + frappe.get_traceback()
+		frappe.log_error("DHL Create Recipient Exception", dctResult.op_message)
+
 	return dctResult
 
 def validate_address(doc, method):
