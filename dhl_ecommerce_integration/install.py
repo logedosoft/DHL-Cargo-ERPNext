@@ -56,6 +56,7 @@ def run_install_setup():
     ensure_delivery_method_has_dhl()
     seed_dhl_delivery_types()
     seed_dhl_payment_types()
+    frappe.db.commit()
 
 
 def ensure_delivery_method_has_dhl():
