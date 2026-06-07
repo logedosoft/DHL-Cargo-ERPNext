@@ -59,9 +59,16 @@ def run_install_setup():
 
 
 def ensure_delivery_method_has_dhl():
-    doctype = "Delivery Method"
+    doctype = "Delivery Note"
     fieldname = "custom_ld_delivery_method"
     new_option = "DHL"
+
+    if not frappe.db.exists("DocType", doctype):
+        frappe.log_error(
+            title="DHL Integration Install Warning",
+            message=f"DocType {doctype} does not exist on this site. Skipping DHL option setup.",
+        )
+        return
 
     custom_field_name = frappe.db.get_value(
         "Custom Field",
