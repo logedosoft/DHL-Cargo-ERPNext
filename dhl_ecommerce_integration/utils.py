@@ -407,10 +407,14 @@ def create_order(strDeliveryNoteName, lstParcels):
 				dctResult = _send_create_order(dctPayload, dctHeaders, strURL, docDHLSettings)
 
 				if dctResult.op_result:
-					strComment = "DHL CreateOrder succeeded. OrderInvoiceId: {0}, ShipperBranchCode: {1}, ReferenceId: {2}".format(
+					frappe.db.set_value("Delivery Note", strDeliveryNoteName, {
+						"dhl_reference_id": dctResult.reference_id or "",
+						"dhl_order_invoice_id": dctResult.order_invoice_id or "",
+						"dhl_shipper_branch_code": dctResult.shipper_branch_code or "",
+					})
+					docDN.add_comment("Comment", "DHL CreateOrder succeeded. OrderInvoiceId: {0}, ShipperBranchCode: {1}, ReferenceId: {2}".format(
 						dctResult.order_invoice_id or "", dctResult.shipper_branch_code or "", dctResult.reference_id or ""
-					)
-					docDN.add_comment("Comment", strComment)
+					))
 
 					strReferenceId = dctResult.reference_id
 					lstOrderPieces = dctPayload["orderPieceList"]
@@ -423,6 +427,21 @@ def create_order(strDeliveryNoteName, lstParcels):
 						dctResult.barcodes = dctBCResult.barcodes
 						dctResult.invoice_id = dctBCResult.invoice_id
 						dctResult.shipment_id = dctBCResult.shipment_id
+						frappe.db.set_value("Delivery Note", strDeliveryNoteName, {
+							"dhl_barcode_invoice_id": dctBCResult.invoice_id or "",
+							"dhl_shipment_id": dctBCResult.shipment_id or "",
+						})
+						for dctBarcode in (dctBCResult.barcodes or []):
+							docBarcode = frappe.get_doc({
+								"doctype": "DHL Barcode",
+								"parent": strDeliveryNoteName,
+								"parenttype": "Delivery Note",
+								"parentfield": "dhl_barcodes",
+								"piece_number": dctBarcode.get("pieceNumber", 0),
+								"barcode_zpl": dctBarcode.get("value", ""),
+								"barcode": strReferenceId,
+							})
+							docBarcode.insert(ignore_permissions=True)
 						docDN.add_comment("Comment", "DHL CreateBarcode succeeded. InvoiceId: {0}, ShipmentId: {1}".format(
 							dctBCResult.invoice_id or "", dctBCResult.shipment_id or ""
 						))
@@ -431,8 +450,7 @@ def create_order(strDeliveryNoteName, lstParcels):
 						dctResult.op_message = "CreateOrder succeeded but CreateBarcode failed: " + dctBCResult.op_message
 						docDN.add_comment("Comment", "DHL CreateBarcode failed: " + dctBCResult.op_message)
 				else:
-					strComment = "DHL CreateOrder failed: " + dctResult.op_message
-					docDN.add_comment("Comment", strComment)
+					docDN.add_comment("Comment", "DHL CreateOrder failed: " + dctResult.op_message)
 
 	return dctResult
 

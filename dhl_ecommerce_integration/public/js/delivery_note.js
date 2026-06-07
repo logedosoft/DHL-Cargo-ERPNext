@@ -4,7 +4,7 @@
 frappe.ui.form.on("Delivery Note", {
 	refresh(frm) {
 		if (frm.doc.docstatus === 1 && frm.doc.custom_ld_delivery_method === "DHL") {
-			frm.add_custom_button(__("DHL Kargo Oluştur"), function() {
+			frm.add_custom_button(__("DHL Kargo"), function() {
 				frappe.prompt({
 					label: __("Fiziksel Koli Adedi"),
 					fieldname: "dParcelCount",
@@ -13,7 +13,7 @@ frappe.ui.form.on("Delivery Note", {
 				}, function(dctValues) {
 					let dTotal = dctValues.dParcelCount;
 					if (dTotal <= 0) {
-						frappe.msgprint(__("Koli adedi sıfırdan büyük olmalıdır"));
+						frappe.msgprint(__("Koli adedi sıfırdan büyük olmalıdır!"));
 						return;
 					}
 					let lstParcels = [];
@@ -26,11 +26,11 @@ frappe.ui.form.on("Delivery Note", {
 									lstParcels: lstParcels
 								},
 								freeze: true,
-								freeze_message: __("DHL kargo oluşturuluyor..."),
+								freeze_message: __("DHL etiket oluşturuluyor..."),
 								callback: function(dctR) {
 									if (dctR.message) {
 										if (dctR.message.op_result) {
-											let strMsg = __("DHL kargo başarıyla oluşturuldu");
+											let strMsg = __("DHL etiket başarıyla oluşturuldu");
 											if (dctR.message.barcodes && dctR.message.barcodes.length > 0) {
 												strMsg += __(" — {0} etiket üretildi", [dctR.message.barcodes.length]);
 											}
