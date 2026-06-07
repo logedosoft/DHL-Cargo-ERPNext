@@ -43,9 +43,6 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-doctype_js = {
-	"Delivery Note" : "public/js/delivery_note.js"
-	}
 # doctype_js = {"doctype" : "public/js/doctype.js"}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -87,6 +84,7 @@ doctype_js = {
 
 # before_install = "dhl_ecommerce_integration.install.before_install"
 after_install = "dhl_ecommerce_integration.install.after_install"
+after_sync = "dhl_ecommerce_integration.install.after_sync"
 
 # Uninstallation
 # ------------
@@ -94,8 +92,6 @@ after_install = "dhl_ecommerce_integration.install.after_install"
 before_uninstall = "dhl_ecommerce_integration.install.before_uninstall"
 # before_uninstall = "dhl_ecommerce_integration.uninstall.before_uninstall"
 # after_uninstall = "dhl_ecommerce_integration.uninstall.after_uninstall"
-
-after_sync = "dhl_ecommerce_integration.install.after_sync"
 
 # Integration Setup
 # ------------------
@@ -146,9 +142,6 @@ after_sync = "dhl_ecommerce_integration.install.after_sync"
 doc_events = {
 	"Sales Order": {
 		"on_submit": "dhl_ecommerce_integration.utils.create_recipient"
-	},
-	"Address": {
-		"validate": "dhl_ecommerce_integration.utils.validate_address"
 	}
 }
 # doc_events = {
@@ -260,4 +253,3 @@ doc_events = {
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-

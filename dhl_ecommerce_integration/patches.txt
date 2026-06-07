@@ -5,4 +5,4 @@
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
 dhl_ecommerce_integration.patches.create_custom_fields
-dhl_ecommerce_integration.patches.setup_dhl_integration.execute
+dhl_ecommerce_integration.patches.setup_dhl_integration
