@@ -6,17 +6,29 @@
  "engine": "InnoDB",
  "field_order": [
   "enabled",
+  "enable_detailed_logs",
+  "sales_order_creates_recipient",
   "web_service_url",
+  "column_break_khji",
+  "default_phone",
+  "default_email",
+  "payment_type",
+  "delivery_type",
   "sblogin_info_section",
   "customer_number",
   "client_id",
+  "btn_test_connection",
   "column_break_ygsc",
   "password",
   "client_secret",
   "tbtoken_tab",
   "jwt_expire_date",
   "jwt_token",
-  "refresh_token"
+  "refresh_token",
+  "tbcity_tab",
+  "btn_get_cities_and_districts",
+  "cities",
+  "districts"
  ],
  "fields": [
   {
@@ -33,22 +45,22 @@
   {
    "fieldname": "customer_number",
    "fieldtype": "Data",
-   "label": "customer_number"
+   "label": "Customer Number"
   },
   {
    "fieldname": "password",
    "fieldtype": "Password",
-   "label": "password"
+   "label": "Password"
   },
   {
    "fieldname": "client_id",
    "fieldtype": "Data",
-   "label": "client_id"
+   "label": "Client ID"
   },
   {
    "fieldname": "client_secret",
    "fieldtype": "Password",
-   "label": "client_secret"
+   "label": "Client Secret"
   },
   {
    "fieldname": "tbtoken_tab",
@@ -81,13 +93,78 @@
    "fieldname": "web_service_url",
    "fieldtype": "Data",
    "label": "Web Service URL"
+  },
+  {
+   "fieldname": "btn_test_connection",
+   "fieldtype": "Button",
+   "label": "Test Connection"
+  },
+  {
+   "default": "0",
+   "fieldname": "enable_detailed_logs",
+   "fieldtype": "Check",
+   "label": "Enable Detailed Logs"
+  },
+  {
+   "fieldname": "cities",
+   "fieldtype": "Table",
+   "label": "Cities",
+   "options": "DHL City"
+  },
+  {
+   "fieldname": "districts",
+   "fieldtype": "Table",
+   "label": "Districts",
+   "options": "DHL District"
+  },
+  {
+   "fieldname": "tbcity_tab",
+   "fieldtype": "Tab Break",
+   "label": "City - District"
+  },
+  {
+   "fieldname": "btn_get_cities_and_districts",
+   "fieldtype": "Button",
+   "label": "Refresh List"
+  },
+  {
+   "fieldname": "column_break_khji",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "default_phone",
+   "fieldtype": "Data",
+   "label": "Default Phone "
+  },
+  {
+   "fieldname": "default_email",
+   "fieldtype": "Data",
+   "label": "Default Email"
+  },
+  {
+   "default": "0",
+   "fieldname": "sales_order_creates_recipient",
+   "fieldtype": "Check",
+   "label": "Sales Order Creates Recipient"
+  },
+  {
+   "fieldname": "payment_type",
+   "fieldtype": "Link",
+   "label": "Payment Type",
+   "options": "DHL Payment Type"
+  },
+  {
+   "fieldname": "delivery_type",
+   "fieldtype": "Link",
+   "label": "Delivery Type",
+   "options": "DHL Delivery Type"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-05-21 12:59:48.792048",
+ "modified": "2026-06-07 12:51:41.264954",
  "modified_by": "Administrator",
  "module": "DHL eCommerce Cargo Integration",
  "name": "DHL Cargo Settings",

@@ -43,6 +43,9 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
+doctype_js = {
+	"Delivery Note" : "public/js/delivery_note.js"
+	}
 # doctype_js = {"doctype" : "public/js/doctype.js"}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -84,7 +87,13 @@ app_license = "mit"
 
 # before_install = "dhl_ecommerce_integration.install.before_install"
 after_install = "dhl_ecommerce_integration.install.after_install"
+<<<<<<< HEAD
+# after_sync runs during migrate BEFORE customizations are updated — use after_migrate instead
+# after_sync = "dhl_ecommerce_integration.install.after_sync"
+after_migrate = ["dhl_ecommerce_integration.install.after_sync"]
+=======
 after_sync = "dhl_ecommerce_integration.install.after_sync"
+>>>>>>> origin/main
 
 # Uninstallation
 # ------------
@@ -142,6 +151,9 @@ before_uninstall = "dhl_ecommerce_integration.install.before_uninstall"
 doc_events = {
 	"Sales Order": {
 		"on_submit": "dhl_ecommerce_integration.utils.create_recipient"
+	},
+	"Address": {
+		"validate": "dhl_ecommerce_integration.utils.validate_address"
 	}
 }
 # doc_events = {

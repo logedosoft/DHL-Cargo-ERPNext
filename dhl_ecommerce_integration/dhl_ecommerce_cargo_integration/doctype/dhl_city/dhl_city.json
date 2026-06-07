@@ -1,0 +1,51 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-06-04 11:36:05.481633",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "code",
+  "city_name",
+  "examples"
+ ],
+ "fields": [
+  {
+   "fieldname": "code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Code",
+   "reqd": 1
+  },
+  {
+   "fieldname": "city_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "City Name",
+   "reqd": 1
+  },
+  {
+   "description": "Comma separated list of valid examples.",
+   "fieldname": "examples",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Examples"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-04 11:49:29.029458",
+ "modified_by": "Administrator",
+ "module": "DHL eCommerce Cargo Integration",
+ "name": "DHL City",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

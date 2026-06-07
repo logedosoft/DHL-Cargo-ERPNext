@@ -54,25 +54,7 @@ Base URLs:
 - **ERPNext** v14 or v15
 - **Python** 3.10+
 - A valid **DHL eCommerce / MNG Kargo** customer account
-- API credentials from [MNG Kargo ApiZone](https://apizone.mngkargo.com.tr) (production) or [Sandbox](https://sandbox.mngkargo.com.tr) (testing)
-
----
-
-## Installation
-
-```bash
-# Navigate to your Frappe bench directory
-cd /home/frappe/frappe-bench
-
-# Get the app
-bench get-app https://github.com/your-org/dhl_ecommerce_integration
-
-# Install on your site
-bench --site your-site.com install-app dhl_ecommerce_integration
-
-# Run migrations
-bench --site your-site.com migrate
-```
+- API credentials
 
 ---
 
@@ -168,41 +150,6 @@ Immutable audit log. Every API call records:
 - HTTP status code
 - Timestamp
 - Linked Delivery Note
-
----
-
-## Example API Flow (Python/Frappe)
-
-```python
-import frappe, requests
-
-def get_jwt_token():
-    settings = frappe.get_single("DHL Cargo Settings")
-    # Check cached token expiry
-    if settings.jwt_token and not is_token_expired(settings.jwt_expire_date):
-        return settings.jwt_token
-
-    response = requests.post(
-        f"{settings.base_url}/mngapi/api/token",
-        headers={
-            "x-ibm-client-id": settings.ibm_client_id,
-            "x-ibm-client-secret": settings.get_password("ibm_client_secret"),
-            "Content-Type": "application/json"
-        },
-        json={
-            "customerNumber": settings.customer_number,
-            "password": settings.get_password("password"),
-            "identityType": 1
-        }
-    )
-    data = response.json()
-    # Cache token back to Settings
-    frappe.db.set_value("DHL Cargo Settings", None, {
-        "jwt_token": data["jwt"],
-        "jwt_expire_date": data["jwtExpireDate"]
-    })
-    return data["jwt"]
-```
 
 ---
 
