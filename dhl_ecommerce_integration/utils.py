@@ -410,10 +410,29 @@ def create_order(strDeliveryNoteName, lstParcels):
 					strComment = "DHL CreateOrder succeeded. OrderInvoiceId: {0}, ShipperBranchCode: {1}, ReferenceId: {2}".format(
 						dctResult.order_invoice_id or "", dctResult.shipper_branch_code or "", dctResult.reference_id or ""
 					)
+					docDN.add_comment("Comment", strComment)
+
+					strReferenceId = dctResult.reference_id
+					lstOrderPieces = dctPayload["orderPieceList"]
+					strFirstItemGroup = lstOrderPieces[0]["content"] if lstOrderPieces else ""
+					dctBCPayload = _build_create_barcode_payload(strReferenceId, lstParcels, strFirstItemGroup)
+					strBCURL = docDHLSettings.web_service_url + "/mngapi/api/barcodecmdapi/createbarcode"
+					dctBCResult = _send_create_barcode(dctBCPayload, dctHeaders, strBCURL, docDHLSettings)
+
+					if dctBCResult.op_result:
+						dctResult.barcodes = dctBCResult.barcodes
+						dctResult.invoice_id = dctBCResult.invoice_id
+						dctResult.shipment_id = dctBCResult.shipment_id
+						docDN.add_comment("Comment", "DHL CreateBarcode succeeded. InvoiceId: {0}, ShipmentId: {1}".format(
+							dctBCResult.invoice_id or "", dctBCResult.shipment_id or ""
+						))
+					else:
+						dctResult.op_result = False
+						dctResult.op_message = "CreateOrder succeeded but CreateBarcode failed: " + dctBCResult.op_message
+						docDN.add_comment("Comment", "DHL CreateBarcode failed: " + dctBCResult.op_message)
 				else:
 					strComment = "DHL CreateOrder failed: " + dctResult.op_message
-
-				docDN.add_comment("Comment", strComment)
+					docDN.add_comment("Comment", strComment)
 
 	return dctResult
 
@@ -496,6 +515,31 @@ def _build_create_order_payload(docDN, lstParcels):
 	return dctPayload
 
 
+def _build_create_barcode_payload(strReferenceId, lstParcels, strFirstItemGroup):
+	dctPayload = {
+		"referenceId": strReferenceId,
+		"billOfLandingId": "",
+		"isCOD": 0,
+		"codAmount": 0,
+		"printReferenceBarcodeOnError": 1,
+		"message": "",
+		"additionalContent1": "",
+		"additionalContent2": "",
+		"additionalContent3": "",
+		"additionalContent4": "",
+		"packagingType": 3,
+		"orderPieceList": [
+			{
+				"barcode": strReferenceId,
+				"desi": dctParcel.get("desi", 1),
+				"kg": dctParcel.get("kg", 1),
+				"content": strFirstItemGroup
+			} for dctParcel in lstParcels
+		]
+	}
+	return dctPayload
+
+
 def _send_create_order(dctPayload, dctHeaders, strURL, docDHLSettings):
 	dctResult = frappe._dict({
 		"op_result": False,
@@ -534,6 +578,44 @@ def _send_create_order(dctPayload, dctHeaders, strURL, docDHLSettings):
 		dctResult.status_code = 0
 		dctResult.op_message = "Exception during createOrder: " + frappe.get_traceback()
 		frappe.log_error("DHL CreateOrder Exception", dctResult.op_message)
+
+	return dctResult
+
+
+def _send_create_barcode(dctPayload, dctHeaders, strURL, docDHLSettings):
+	dctResult = frappe._dict({"op_result": False, "op_message": ""})
+
+	try:
+		objResponse = requests.post(strURL, json=dctPayload, headers=dctHeaders, timeout=30)
+
+		if docDHLSettings.enable_detailed_logs:
+			frappe.log_error("DHL CreateBarcode Response", frappe.as_json({
+				"status_code": objResponse.status_code,
+				"headers": dict(objResponse.headers),
+				"body": objResponse.text
+			}))
+
+		dctResult.status_code = objResponse.status_code
+
+		if objResponse.status_code == 200:
+			lstData = objResponse.json()
+			if isinstance(lstData, list) and len(lstData) > 0:
+				dctFirst = lstData[0]
+				dctResult.op_result = True
+				dctResult.op_message = "CreateBarcode succeeded"
+				dctResult.invoice_id = dctFirst.get("invoiceId")
+				dctResult.shipment_id = dctFirst.get("shipmentId")
+				dctResult.barcodes = dctFirst.get("barcodes", [])
+			else:
+				dctResult.op_message = "Unexpected response format: " + str(lstData)[:500]
+				frappe.log_error("DHL CreateBarcode Error", dctResult.op_message)
+		else:
+			dctResult.op_message = "HTTP {0}: {1}".format(objResponse.status_code, objResponse.text[:500])
+			frappe.log_error("DHL CreateBarcode Error", dctResult.op_message)
+	except Exception:
+		dctResult.status_code = 0
+		dctResult.op_message = "Exception during createBarcode: " + frappe.get_traceback()
+		frappe.log_error("DHL CreateBarcode Exception", dctResult.op_message)
 
 	return dctResult
 

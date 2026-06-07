@@ -30,7 +30,11 @@ frappe.ui.form.on("Delivery Note", {
 								callback: function(dctR) {
 									if (dctR.message) {
 										if (dctR.message.op_result) {
-											frappe.show_alert(__("DHL kargo başarıyla oluşturuldu"));
+											let strMsg = __("DHL kargo başarıyla oluşturuldu");
+											if (dctR.message.barcodes && dctR.message.barcodes.length > 0) {
+												strMsg += __(" — {0} etiket üretildi", [dctR.message.barcodes.length]);
+											}
+											frappe.show_alert(strMsg);
 										} else {
 											frappe.msgprint(__("Hata: {0}", [dctR.message.op_message]));
 										}
@@ -63,7 +67,7 @@ frappe.ui.form.on("Delivery Note", {
 					}
 					askParcel(0);
 				}, __("Koli Bilgisi"));
-			}, __("Kargo İşlemleri"));
+			}, __("Kargo Etiketi Yazdır"));
 		}
 	}
 });
