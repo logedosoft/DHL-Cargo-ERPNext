@@ -56,7 +56,6 @@ def run_install_setup():
     ensure_delivery_method_has_dhl()
     seed_dhl_delivery_types()
     seed_dhl_payment_types()
-<<<<<<< HEAD
     frappe.db.commit()
 
 
@@ -72,15 +71,6 @@ def ensure_delivery_method_has_dhl():
         )
         return
 
-=======
-
-
-def ensure_delivery_method_has_dhl():
-    doctype = "Delivery Method"
-    fieldname = "custom_ld_delivery_method"
-    new_option = "DHL"
-
->>>>>>> origin/main
     custom_field_name = frappe.db.get_value(
         "Custom Field",
         {"dt": doctype, "fieldname": fieldname},
@@ -89,17 +79,10 @@ def ensure_delivery_method_has_dhl():
 
     if custom_field_name:
         custom_field = frappe.get_doc("Custom Field", custom_field_name)
-<<<<<<< HEAD
         has_leading_blank, options = split_options(custom_field.options)
 
         if new_option not in options:
             custom_field.options = build_options(has_leading_blank, options + [new_option])
-=======
-        options = split_options(custom_field.options)
-
-        if new_option not in options:
-            custom_field.options = "\n".join(options + [new_option])
->>>>>>> origin/main
             custom_field.save(ignore_permissions=True)
             frappe.clear_cache(doctype=doctype)
 
@@ -114,20 +97,12 @@ def ensure_delivery_method_has_dhl():
         )
         return
 
-<<<<<<< HEAD
     has_leading_blank, options = split_options(docfield.options)
-=======
-    options = split_options(docfield.options)
->>>>>>> origin/main
 
     if new_option in options:
         return
 
-<<<<<<< HEAD
     new_value = build_options(has_leading_blank, options + [new_option])
-=======
-    new_value = "\n".join(options + [new_option])
->>>>>>> origin/main
 
     property_setter_name = frappe.db.get_value(
         "Property Setter",
@@ -160,7 +135,6 @@ def ensure_delivery_method_has_dhl():
 
 
 def split_options(options):
-<<<<<<< HEAD
     """Returns (has_leading_blank, list_of_non_empty_options).
     Preserves the leading empty line that Select fields use for a blank default.
     """
@@ -176,9 +150,6 @@ def build_options(has_leading_blank, options):
     if has_leading_blank:
         result = "\n" + result
     return result
-=======
-    return [row.strip() for row in (options or "").split("\n") if row.strip()]
->>>>>>> origin/main
 
 
 def seed_dhl_delivery_types():
