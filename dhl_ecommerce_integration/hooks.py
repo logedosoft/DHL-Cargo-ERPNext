@@ -84,7 +84,9 @@ app_license = "mit"
 
 # before_install = "dhl_ecommerce_integration.install.before_install"
 after_install = "dhl_ecommerce_integration.install.after_install"
-after_sync = "dhl_ecommerce_integration.install.after_sync"
+# after_sync runs during migrate BEFORE customizations are updated — use after_migrate instead
+# after_sync = "dhl_ecommerce_integration.install.after_sync"
+after_migrate = ["dhl_ecommerce_integration.install.after_sync"]
 
 # Uninstallation
 # ------------
