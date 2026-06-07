@@ -84,6 +84,7 @@ app_license = "mit"
 
 # before_install = "dhl_ecommerce_integration.install.before_install"
 after_install = "dhl_ecommerce_integration.install.after_install"
+after_sync = "dhl_ecommerce_integration.install.after_sync"
 
 # Uninstallation
 # ------------
@@ -252,4 +253,3 @@ doc_events = {
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-
