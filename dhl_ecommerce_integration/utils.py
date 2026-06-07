@@ -6,6 +6,17 @@ from datetime import datetime
 from frappe import msgprint, _
 from frappe.utils import get_datetime_str
 
+# Helper function to convert Turkish characters to uppercase for DHL city-district maps
+def uppercase_tr(s):
+    if not s: 
+        return ""
+    
+    # 1. Translate specific Turkish lowercase letters to uppercase
+    tr = str.maketrans("ıişüğçö", "IİŞÜĞÇÖ")
+    
+    # 2. Apply translation, then standard upper() for the rest (a-z)
+    return s.translate(tr).upper()
+
 @frappe.whitelist()
 def get_token(blnForce=False):
 	dctResult = frappe._dict({
@@ -224,6 +235,8 @@ def create_recipient(doc, method):
 		docDHLSettings = frappe.get_single("DHL Cargo Settings")
 		if docDHLSettings.enabled and docDHLSettings.sales_order_creates_recipient:
 			docAddress = frappe.get_doc("Address", doc.shipping_address_name)
+			docAddress.city = uppercase_tr(docAddress.city)
+			docAddress.county = uppercase_tr(docAddress.county)
 
 			strCityCode = None
 			for row in docDHLSettings.cities:
@@ -282,7 +295,7 @@ def create_recipient(doc, method):
 							"x-ibm-client-id": docDHLSettings.client_id,
 							"x-ibm-client-secret": docDHLSettings.get_password("client_secret"),
 							"Content-Type": "application/json",
-							"Authorization": "Bearer " + (docDHLSettings.jwt_token or "")
+							"Authorization": "Bearer " + (dctTokenResult.token or "")
 						}
 
 						try:
@@ -299,13 +312,23 @@ def create_recipient(doc, method):
 								dctResult.op_result = True
 								dctResult.op_message = "Recipient created successfully"
 							elif response.status_code == 401:
-								dctResult.op_result = False
-								www_auth = response.headers.get("www-authenticate", "")
-								if "invalid_token" in www_auth:
-									dctResult.op_message = "Authentication failed: Token expired or invalid. Please re-authenticate."
+								# Token may have expired between cache check and API call — force-refresh and retry once
+								dctRetryToken = get_token(blnForce=True)
+								if dctRetryToken.op_result:
+									dctHeaders["Authorization"] = "Bearer " + (dctRetryToken.token or "")
+									response = requests.post(strCreateURL, json=dctPayload, headers=dctHeaders, timeout=30)
+
+								if response.status_code == 200:
+									dctResult.op_result = True
+									dctResult.op_message = "Recipient created successfully (after token refresh)"
 								else:
-									dctResult.op_message = "Authentication failed (401): " + www_auth
-								frappe.log_error("DHL Create Recipient HEADER_ERROR", dctResult.op_message)
+									dctResult.op_result = False
+									www_auth = response.headers.get("www-authenticate", "")
+									if "invalid_token" in www_auth:
+										dctResult.op_message = "Authentication failed: Token expired or invalid. Please re-authenticate."
+									else:
+										dctResult.op_message = "Authentication failed (401): " + www_auth
+									frappe.log_error("DHL Create Recipient HEADER_ERROR", dctResult.op_message)
 							elif response.status_code == 404:
 								dctResult.op_result = False
 								dctResponse = response.json()
@@ -324,4 +347,48 @@ def create_recipient(doc, method):
 							frappe.log_error("DHL Create Recipient Exception", dctResult.op_message)
 
 	doc.add_comment("Comment", dctResult.op_message)
+	return dctResult
+
+def validate_address(doc, method):
+	#Validates given City and County (District) against DHL Settings city - district pairs
+	#Only if DHL Settings enabled and address is for Turkey.
+	dctResult = frappe._dict({
+		"op_result": True,
+		"op_message": ""
+	})
+
+	docDHLSettings = frappe.get_single("DHL Cargo Settings")
+	if docDHLSettings.enabled:
+		strCountryCode = frappe.db.get_value("Country", doc.country, "code") if doc.country else ""
+
+		#Check if country is actually Türkiye
+		if strCountryCode.upper() == "TR":
+			strCity = uppercase_tr(doc.city or "")
+			strCounty = uppercase_tr(doc.county or "")
+
+			blnCityValid = False
+			strCityCode = ""
+			for row in docDHLSettings.cities:
+				if row.city_name and row.city_name == strCity:
+					blnCityValid = True
+					strCityCode = row.code
+					break
+
+			if not blnCityValid:
+				dctResult.op_result = False
+				dctResult.op_message = _("City not mapped in DHL Cargo Settings: {0}!").format(strCity)
+			else:
+				blnCountyValid = False
+				for row in docDHLSettings.districts:
+					if row.city_code == strCityCode and row.district_name and row.district_name == strCounty:
+						blnCountyValid = True
+						break
+
+				if not blnCountyValid:
+					dctResult.op_result = False
+					dctResult.op_message = _("County not mapped in DHL Cargo Settings: {0}!").format(strCounty)
+
+	if not dctResult.op_result:
+		frappe.throw(dctResult.op_message)
+
 	return dctResult

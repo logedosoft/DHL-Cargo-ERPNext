@@ -141,6 +141,9 @@ before_uninstall = "dhl_ecommerce_integration.install.before_uninstall"
 doc_events = {
 	"Sales Order": {
 		"on_submit": "dhl_ecommerce_integration.utils.create_recipient"
+	},
+	"Address": {
+		"validate": "dhl_ecommerce_integration.utils.validate_address"
 	}
 }
 # doc_events = {
