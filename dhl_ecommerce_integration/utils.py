@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 
 import frappe, json, requests, base64
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from frappe import msgprint, _
 from frappe.utils import get_datetime_str
 
@@ -28,10 +28,10 @@ def _is_jwt_exp_valid(strJWT):
 			strPadded = lstParts[1] + "=" * (4 - len(lstParts[1]) % 4)
 			dctPayload = json.loads(base64.urlsafe_b64decode(strPadded))
 			if "exp" in dctPayload:
-				dtExpUTC = datetime.utcfromtimestamp(dctPayload["exp"])
+				dtExpUTC = datetime.fromtimestamp(dctPayload["exp"], tz=timezone.utc)
 				# Add 5-minute safety margin — refresh before actual expiry
 				dtExpWithMargin = dtExpUTC + timedelta(minutes=5)
-				blnValid = datetime.utcnow() < dtExpWithMargin
+				blnValid = datetime.now(tz=timezone.utc) < dtExpWithMargin
 	except Exception:
 		# If decoding fails, don't block — let the API validate
 		pass
@@ -371,6 +371,169 @@ def _send_create_recipient(doc, docDHLSettings, docAddress, strCityCode, strDist
 		frappe.log_error("DHL Create Recipient Exception", dctResult.op_message)
 
 	return dctResult
+
+@frappe.whitelist()
+def create_order(strDeliveryNoteName, lstParcels):
+	dctResult = frappe._dict({
+		"op_result": False,
+		"op_message": ""
+	})
+
+	docDHLSettings = frappe.get_single("DHL Cargo Settings")
+	if not docDHLSettings.enabled:
+		frappe.throw("DHL Cargo Settings is not enabled!")
+	else:
+		docDN = frappe.get_doc("Delivery Note", strDeliveryNoteName)
+		if docDN.custom_ld_delivery_method != "DHL":
+			frappe.throw("Delivery method is not DHL for {0}".format(docDN.name))
+		elif not docDN.shipping_address_name:
+			frappe.throw("Shipping address is required for DHL cargo")
+		else:
+			dctTokenResult = get_token()
+			if not dctTokenResult.op_result:
+				frappe.throw("Get Token failed: " + dctTokenResult.op_message)
+			else:
+				dctPayload = _build_create_order_payload(docDN, lstParcels)
+				dctHeaders = {
+					"x-ibm-client-id": docDHLSettings.client_id,
+					"x-ibm-client-secret": docDHLSettings.get_password("client_secret"),
+					"Content-Type": "application/json",
+					"Authorization": "Bearer " + dctTokenResult.token
+				}
+				strURL = docDHLSettings.web_service_url + "/mngapi/api/standardcmdapi/createOrder"
+				dctResult = _send_create_order(dctPayload, dctHeaders, strURL, docDHLSettings)
+
+				if dctResult.op_result:
+					strComment = "DHL CreateOrder succeeded. OrderInvoiceId: {0}, ShipperBranchCode: {1}, ReferenceId: {2}".format(
+						dctResult.order_invoice_id or "", dctResult.shipper_branch_code or "", dctResult.reference_id or ""
+					)
+				else:
+					strComment = "DHL CreateOrder failed: " + dctResult.op_message
+
+				docDN.add_comment("Comment", strComment)
+
+	return dctResult
+
+
+def _build_create_order_payload(docDN, lstParcels):
+	docDHLSettings = frappe.get_single("DHL Cargo Settings")
+	docAddress = frappe.get_doc("Address", docDN.shipping_address_name)
+	docAddress.city = uppercase_tr(docAddress.city)
+	docAddress.county = uppercase_tr(docAddress.county)
+
+	strCityCode = "0"
+	for row in docDHLSettings.cities:
+		if row.city_name and row.city_name == docAddress.city:
+			strCityCode = row.code
+			break
+
+	strDistrictCode = "0"
+	for row in docDHLSettings.districts:
+		if row.city_code == strCityCode and row.district_name and row.district_name == docAddress.county:
+			strDistrictCode = row.code
+			break
+
+	lstItemGroups = list(dict.fromkeys([item.item_group for item in docDN.items if item.item_group]))
+	strContent = " / ".join(lstItemGroups)[:200]
+	strFirstItemGroup = docDN.items[0].item_group if docDN.items else ""
+	strReferenceId = docDN.name
+
+	strMobile = docAddress.phone or docDHLSettings.default_phone or ""
+	strEmail = docAddress.email_id or docDHLSettings.default_email or ""
+	strAddress = (docAddress.address_line1 or "") + " " + (docAddress.address_line2 or "")
+
+	lstOrderPieces = []
+	for dctParcel in lstParcels:
+		lstOrderPieces.append({
+			"barcode": strReferenceId,
+			"desi": dctParcel.get("desi", 1),
+			"kg": dctParcel.get("kg", 1),
+			"content": strFirstItemGroup
+		})
+
+	dctPayload = {
+		"order": {
+			"referenceId": strReferenceId,
+			"barcode": strReferenceId,
+			"billOfLandingId": "",
+			"isCOD": 0,
+			"codAmount": 0,
+			"shipmentServiceType": 1,
+			"packagingType": 3,
+			"content": strContent,
+			"smsPreference1": 0,
+			"smsPreference2": 0,
+			"smsPreference3": 0,
+			"paymentType": 1,
+			"deliveryType": 1,
+			"description": "Paket Hazırlandı",
+			"marketPlaceShortCode": "",
+			"marketPlaceSaleCode": "",
+			"pudoId": ""
+		},
+		"orderPieceList": lstOrderPieces,
+		"recipient": {
+			"customerId": "",
+			"refCustomerId": "",
+			"cityCode": int(strCityCode),
+			"districtCode": int(strDistrictCode),
+			"cityName": docAddress.city or "",
+			"districtName": docAddress.county or "",
+			"address": strAddress.strip(),
+			"fullName": docAddress.address_title or "",
+			"mobilePhoneNumber": strMobile,
+			"bussinessPhoneNumber": "",
+			"homePhoneNumber": "",
+			"email": strEmail,
+			"taxOffice": "",
+			"taxNumber": ""
+		}
+	}
+
+	return dctPayload
+
+
+def _send_create_order(dctPayload, dctHeaders, strURL, docDHLSettings):
+	dctResult = frappe._dict({
+		"op_result": False,
+		"op_message": ""
+	})
+
+	try:
+		objResponse = requests.post(strURL, json=dctPayload, headers=dctHeaders, timeout=30)
+
+		if docDHLSettings.enable_detailed_logs:
+			frappe.log_error("DHL CreateOrder Response", frappe.as_json({
+				"status_code": objResponse.status_code,
+				"headers": dict(objResponse.headers),
+				"body": objResponse.text
+			}))
+
+		dctResult.status_code = objResponse.status_code
+
+		if objResponse.status_code == 200:
+			lstData = objResponse.json()
+			if isinstance(lstData, list) and len(lstData) > 0:
+				dctFirst = lstData[0]
+				dctResult.op_result = True
+				dctResult.op_message = "CreateOrder succeeded"
+				dctResult.reference_id = dctFirst.get("referenceId")
+				dctResult.order_invoice_id = dctFirst.get("orderInvoiceId")
+				dctResult.order_invoice_detail_id = dctFirst.get("orderInvoiceDetailId")
+				dctResult.shipper_branch_code = dctFirst.get("shipperBranchCode")
+			else:
+				dctResult.op_message = "Unexpected response format: " + str(lstData)[:500]
+				frappe.log_error("DHL CreateOrder Error", dctResult.op_message)
+		else:
+			dctResult.op_message = "HTTP {0}: {1}".format(objResponse.status_code, objResponse.text[:500])
+			frappe.log_error("DHL CreateOrder Error", dctResult.op_message)
+	except Exception:
+		dctResult.status_code = 0
+		dctResult.op_message = "Exception during createOrder: " + frappe.get_traceback()
+		frappe.log_error("DHL CreateOrder Exception", dctResult.op_message)
+
+	return dctResult
+
 
 def validate_address(doc, method):
 	#Validates given City and County (District) against DHL Settings city - district pairs
