@@ -1,13 +1,6 @@
 // Copyright (c) 2026, Logedosoft Business Solutions and contributors
 // For license information, please see license.txt
 
-frappe.realtime.on("dhl_cities_refreshed", function(data) {
-	frappe.show_alert(data.message || "Cities and districts updated.");
-	if (cur_frm) {
-		cur_frm.reload_doc();
-	}
-});
-
 frappe.ui.form.on("DHL Cargo Settings", {
 	btn_test_connection(frm) {
 		//Test the credentials by calling get_token() on utils.py
