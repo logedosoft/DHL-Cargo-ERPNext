@@ -248,19 +248,18 @@ def _refresh_cities_and_districts_background():
 			except Exception:
 				frappe.log_error("DHL Get Districts Error " + strCityCode, frappe.get_traceback())
 
-		frappe.clear_cache()
-		docDHLSettings = frappe.get_doc("DHL Cargo Settings")
 		docDHLSettings.set("cities", lstNewCities)
 		docDHLSettings.set("districts", lstNewDistricts)
+		docDHLSettings.modified = frappe.db.get_value("DHL Cargo Settings", "DHL Cargo Settings", "modified")
 		docDHLSettings.save(ignore_permissions=True)
 
 		dctResult.op_result = True
 		dctResult.op_message = "DHL Refresh Cities and Districts completed successfully."
 	except frappe.TimestampMismatchError:
-		frappe.clear_cache()
 		docDHLSettings = frappe.get_doc("DHL Cargo Settings")
 		docDHLSettings.set("cities", lstNewCities)
 		docDHLSettings.set("districts", lstNewDistricts)
+		docDHLSettings.modified = frappe.db.get_value("DHL Cargo Settings", "DHL Cargo Settings", "modified")
 		docDHLSettings.save(ignore_permissions=True)
 		dctResult.op_result = True
 		dctResult.op_message = "DHL Refresh Cities and Districts completed successfully."
