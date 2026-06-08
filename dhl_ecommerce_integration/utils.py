@@ -407,13 +407,60 @@ def create_order(strDeliveryNoteName, lstParcels):
 				dctResult = _send_create_order(dctPayload, dctHeaders, strURL, docDHLSettings)
 
 				if dctResult.op_result:
-					strComment = "DHL CreateOrder succeeded. OrderInvoiceId: {0}, ShipperBranchCode: {1}, ReferenceId: {2}".format(
+					frappe.db.set_value("Delivery Note", strDeliveryNoteName, {
+						"dhl_reference_id": dctResult.reference_id or "",
+						"dhl_order_invoice_id": dctResult.order_invoice_id or "",
+						"dhl_shipper_branch_code": dctResult.shipper_branch_code or "",
+					})
+					docDN.add_comment("Comment", "DHL CreateOrder succeeded. OrderInvoiceId: {0}, ShipperBranchCode: {1}, ReferenceId: {2}".format(
 						dctResult.order_invoice_id or "", dctResult.shipper_branch_code or "", dctResult.reference_id or ""
-					)
-				else:
-					strComment = "DHL CreateOrder failed: " + dctResult.op_message
+					))
 
-				docDN.add_comment("Comment", strComment)
+					strReferenceId = dctResult.reference_id
+					lstOrderPieces = dctPayload["orderPieceList"]
+					strFirstItemGroup = lstOrderPieces[0]["content"] if lstOrderPieces else ""
+					dctBCPayload = _build_create_barcode_payload(strReferenceId, lstParcels, strFirstItemGroup)
+					strBCURL = docDHLSettings.web_service_url + "/mngapi/api/barcodecmdapi/createbarcode"
+					dctBCResult = _send_create_barcode(dctBCPayload, dctHeaders, strBCURL, docDHLSettings)
+
+					if dctBCResult.op_result:
+						dctResult.barcodes = dctBCResult.barcodes
+						dctResult.invoice_id = dctBCResult.invoice_id
+						dctResult.shipment_id = dctBCResult.shipment_id
+						frappe.db.set_value("Delivery Note", strDeliveryNoteName, {
+							"dhl_barcode_invoice_id": dctBCResult.invoice_id or "",
+							"dhl_shipment_id": dctBCResult.shipment_id or "",
+						})
+						for dctBarcode in (dctBCResult.barcodes or []):
+							dPieceIdx = dctBarcode.get("pieceNumber", 1) - 1
+							dctParcel = lstParcels[dPieceIdx] if dPieceIdx < len(lstParcels) else {}
+							docBarcode = frappe.get_doc({
+								"doctype": "DHL Barcode",
+								"parent": strDeliveryNoteName,
+								"parenttype": "Delivery Note",
+								"parentfield": "dhl_barcodes",
+								"piece_number": dctBarcode.get("pieceNumber", 0),
+								"barcode_zpl": dctBarcode.get("value", ""),
+								"barcode": strReferenceId,
+								"desi": dctParcel.get("desi", 0),
+								"kg": dctParcel.get("kg", 0),
+							})
+							docBarcode.insert(ignore_permissions=True)
+						docDN.add_comment("Comment", "DHL CreateBarcode succeeded. InvoiceId: {0}, ShipmentId: {1}".format(
+							dctBCResult.invoice_id or "", dctBCResult.shipment_id or ""
+						))
+						dctPDFResult = _generate_pdfs_for_dn(strDeliveryNoteName)
+						if dctPDFResult.op_result:
+							dctResult.pdf_urls = dctPDFResult.lst_file_urls
+							docDN.add_comment("Comment", "DHL PDF labels generated: {0} files".format(len(dctPDFResult.lst_file_urls)))
+						else:
+							docDN.add_comment("Comment", "DHL PDF generation failed: " + dctPDFResult.op_message)
+					else:
+						dctResult.op_result = False
+						dctResult.op_message = "CreateOrder succeeded but CreateBarcode failed: " + dctBCResult.op_message
+						docDN.add_comment("Comment", "DHL CreateBarcode failed: " + dctBCResult.op_message)
+				else:
+					docDN.add_comment("Comment", "DHL CreateOrder failed: " + dctResult.op_message)
 
 	return dctResult
 
@@ -496,6 +543,31 @@ def _build_create_order_payload(docDN, lstParcels):
 	return dctPayload
 
 
+def _build_create_barcode_payload(strReferenceId, lstParcels, strFirstItemGroup):
+	dctPayload = {
+		"referenceId": strReferenceId,
+		"billOfLandingId": "",
+		"isCOD": 0,
+		"codAmount": 0,
+		"printReferenceBarcodeOnError": 1,
+		"message": "",
+		"additionalContent1": "",
+		"additionalContent2": "",
+		"additionalContent3": "",
+		"additionalContent4": "",
+		"packagingType": 3,
+		"orderPieceList": [
+			{
+				"barcode": strReferenceId,
+				"desi": dctParcel.get("desi", 1),
+				"kg": dctParcel.get("kg", 1),
+				"content": strFirstItemGroup
+			} for dctParcel in lstParcels
+		]
+	}
+	return dctPayload
+
+
 def _send_create_order(dctPayload, dctHeaders, strURL, docDHLSettings):
 	dctResult = frappe._dict({
 		"op_result": False,
@@ -535,6 +607,109 @@ def _send_create_order(dctPayload, dctHeaders, strURL, docDHLSettings):
 		dctResult.op_message = "Exception during createOrder: " + frappe.get_traceback()
 		frappe.log_error("DHL CreateOrder Exception", dctResult.op_message)
 
+	return dctResult
+
+
+def _send_create_barcode(dctPayload, dctHeaders, strURL, docDHLSettings):
+	dctResult = frappe._dict({"op_result": False, "op_message": ""})
+
+	try:
+		objResponse = requests.post(strURL, json=dctPayload, headers=dctHeaders, timeout=30)
+
+		if docDHLSettings.enable_detailed_logs:
+			frappe.log_error("DHL CreateBarcode Response", frappe.as_json({
+				"status_code": objResponse.status_code,
+				"headers": dict(objResponse.headers),
+				"body": objResponse.text
+			}))
+
+		dctResult.status_code = objResponse.status_code
+
+		if objResponse.status_code == 200:
+			lstData = objResponse.json()
+			if isinstance(lstData, list) and len(lstData) > 0:
+				dctFirst = lstData[0]
+				dctResult.op_result = True
+				dctResult.op_message = "CreateBarcode succeeded"
+				dctResult.invoice_id = dctFirst.get("invoiceId")
+				dctResult.shipment_id = dctFirst.get("shipmentId")
+				dctResult.barcodes = dctFirst.get("barcodes", [])
+			else:
+				dctResult.op_message = "Unexpected response format: " + str(lstData)[:500]
+				frappe.log_error("DHL CreateBarcode Error", dctResult.op_message)
+		else:
+			dctResult.op_message = "HTTP {0}: {1}".format(objResponse.status_code, objResponse.text[:500])
+			frappe.log_error("DHL CreateBarcode Error", dctResult.op_message)
+	except Exception:
+		dctResult.status_code = 0
+		dctResult.op_message = "Exception during createBarcode: " + frappe.get_traceback()
+		frappe.log_error("DHL CreateBarcode Exception", dctResult.op_message)
+
+	return dctResult
+
+
+def _convert_zpl_to_pdf(strZpl):
+	strLabelaryURL = "http://api.labelary.com/v1/printers/8dpmm/labels/4x4/0/"
+	dctHeaders = {"accept": "application/pdf", "content-type": "application/x-www-form-urlencoded"}
+	bytPdf = None
+	try:
+		objResponse = requests.post(strLabelaryURL, data=strZpl, headers=dctHeaders, timeout=30)
+		if objResponse.status_code == 200:
+			bytPdf = objResponse.content
+		else:
+			frappe.log_error("DHL Labelary Error", "HTTP {0}: {1}".format(objResponse.status_code, objResponse.text[:500]))
+	except Exception:
+		frappe.log_error("DHL Labelary Exception", frappe.get_traceback())
+	return bytPdf
+
+
+def _attach_pdf_to_dn(strDNName, bytPdf, strFileName):
+	strFileURL = None
+	try:
+		docFile = frappe.get_doc({
+			"doctype": "File",
+			"file_name": strFileName,
+			"content": bytPdf,
+			"is_private": 1,
+			"attached_to_doctype": "Delivery Note",
+			"attached_to_name": strDNName,
+		})
+		docFile.insert(ignore_permissions=True)
+		strFileURL = docFile.file_url
+	except Exception:
+		frappe.log_error("DHL Attach PDF Exception", frappe.get_traceback())
+	return strFileURL
+
+
+def _generate_pdfs_for_dn(strDNName):
+	dctResult = frappe._dict({"op_result": True, "op_message": "", "lst_file_urls": []})
+	docDN = frappe.get_doc("Delivery Note", strDNName)
+	if not docDN.dhl_barcodes:
+		dctResult.op_result = False
+		dctResult.op_message = "No DHL barcodes found"
+	else:
+		for docBCRow in docDN.dhl_barcodes:
+			strZPL = docBCRow.barcode_zpl
+			if not strZPL:
+				continue
+			bytPdf = _convert_zpl_to_pdf(strZPL)
+			if bytPdf:
+				strFileName = "{0}_P{1}.pdf".format(strDNName, docBCRow.piece_number)
+				strFileURL = _attach_pdf_to_dn(strDNName, bytPdf, strFileName)
+				if strFileURL:
+					dctResult.lst_file_urls.append(strFileURL)
+		if not dctResult.lst_file_urls:
+			dctResult.op_result = False
+			dctResult.op_message = "PDF conversion failed for all barcodes"
+	return dctResult
+
+
+@frappe.whitelist()
+def generate_dhl_pdfs(strDeliveryNoteName):
+	docDN = frappe.get_doc("Delivery Note", strDeliveryNoteName)
+	if not (docDN.custom_ld_delivery_method == "DHL" and docDN.dhl_barcodes):
+		frappe.throw("No DHL barcodes found for this Delivery Note")
+	dctResult = _generate_pdfs_for_dn(strDeliveryNoteName)
 	return dctResult
 
 

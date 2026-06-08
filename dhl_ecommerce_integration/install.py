@@ -26,16 +26,62 @@ def get_custom_fields():
                 "label": "DHL Customer ID",
                 "insert_after": "dn_required",
             }
-        ]
-        #,"Delivery Note": [
-        #    {
-        #        "fieldname": "dhl_tracking_number",
-        #        "fieldtype": "Data",
-        #        "label": "DHL Tracking Number",
-        #        "read_only": 1,
-        #        "insert_after": "lr_no",
-        #    },
-        #],
+        ],
+        "Delivery Note": [
+            {
+                "fieldname": "dhl_cargo_section",
+                "fieldtype": "Section Break",
+                "label": "DHL Cargo",
+                "insert_after": "sales_team",
+            },
+            {
+                "fieldname": "dhl_reference_id",
+                "fieldtype": "Data",
+                "label": "DHL Reference ID",
+                "read_only": 1,
+                "insert_after": "dhl_cargo_section",
+            },
+            {
+                "fieldname": "dhl_order_invoice_id",
+                "fieldtype": "Data",
+                "label": "DHL Order Invoice ID",
+                "read_only": 1,
+                "insert_after": "dhl_reference_id",
+            },
+            {
+                "fieldname": "dhl_shipper_branch_code",
+                "fieldtype": "Data",
+                "label": "DHL Shipper Branch Code",
+                "read_only": 1,
+                "insert_after": "dhl_order_invoice_id",
+            },
+            {
+                "fieldname": "column_break_dhl1",
+                "fieldtype": "Column Break",
+                "insert_after": "dhl_shipper_branch_code",
+            },
+            {
+                "fieldname": "dhl_barcode_invoice_id",
+                "fieldtype": "Data",
+                "label": "DHL Barcode Invoice ID",
+                "read_only": 1,
+                "insert_after": "column_break_dhl1",
+            },
+            {
+                "fieldname": "dhl_shipment_id",
+                "fieldtype": "Data",
+                "label": "DHL Shipment ID",
+                "read_only": 1,
+                "insert_after": "dhl_barcode_invoice_id",
+            },
+            {
+                "fieldname": "dhl_barcodes",
+                "fieldtype": "Table",
+                "label": "DHL Barcodes",
+                "options": "DHL Barcode",
+                "insert_after": "dhl_shipment_id",
+            },
+        ],
     }
 
 

@@ -87,13 +87,9 @@ doctype_js = {
 
 # before_install = "dhl_ecommerce_integration.install.before_install"
 after_install = "dhl_ecommerce_integration.install.after_install"
-<<<<<<< HEAD
 # after_sync runs during migrate BEFORE customizations are updated — use after_migrate instead
 # after_sync = "dhl_ecommerce_integration.install.after_sync"
 after_migrate = ["dhl_ecommerce_integration.install.after_sync"]
-=======
-after_sync = "dhl_ecommerce_integration.install.after_sync"
->>>>>>> origin/main
 
 # Uninstallation
 # ------------

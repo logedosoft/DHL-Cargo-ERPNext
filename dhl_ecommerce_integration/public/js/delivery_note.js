@@ -4,7 +4,7 @@
 frappe.ui.form.on("Delivery Note", {
 	refresh(frm) {
 		if (frm.doc.docstatus === 1 && frm.doc.custom_ld_delivery_method === "DHL") {
-			frm.add_custom_button(__("DHL Kargo Oluştur"), function() {
+			frm.add_custom_button(__("DHL Kargo"), function() {
 				frappe.prompt({
 					label: __("Fiziksel Koli Adedi"),
 					fieldname: "dParcelCount",
@@ -13,7 +13,7 @@ frappe.ui.form.on("Delivery Note", {
 				}, function(dctValues) {
 					let dTotal = dctValues.dParcelCount;
 					if (dTotal <= 0) {
-						frappe.msgprint(__("Koli adedi sıfırdan büyük olmalıdır"));
+						frappe.msgprint(__("Koli adedi sıfırdan büyük olmalıdır!"));
 						return;
 					}
 					let lstParcels = [];
@@ -26,11 +26,15 @@ frappe.ui.form.on("Delivery Note", {
 									lstParcels: lstParcels
 								},
 								freeze: true,
-								freeze_message: __("DHL kargo oluşturuluyor..."),
+								freeze_message: __("DHL etiket oluşturuluyor..."),
 								callback: function(dctR) {
 									if (dctR.message) {
 										if (dctR.message.op_result) {
-											frappe.show_alert(__("DHL kargo başarıyla oluşturuldu"));
+											let strMsg = __("DHL etiket başarıyla oluşturuldu");
+											if (dctR.message.barcodes && dctR.message.barcodes.length > 0) {
+												strMsg += __(" — {0} etiket üretildi", [dctR.message.barcodes.length]);
+											}
+											frappe.show_alert(strMsg);
 										} else {
 											frappe.msgprint(__("Hata: {0}", [dctR.message.op_message]));
 										}
@@ -63,7 +67,27 @@ frappe.ui.form.on("Delivery Note", {
 					}
 					askParcel(0);
 				}, __("Koli Bilgisi"));
-			}, __("Kargo İşlemleri"));
+			}, __("Kargo Etiketi Yazdır"));
+			if (frm.doc.dhl_barcodes && frm.doc.dhl_barcodes.length > 0) {
+				frm.add_custom_button(__("DHL Etiket PDF"), function() {
+					frappe.call({
+						method: "dhl_ecommerce_integration.utils.generate_dhl_pdfs",
+						args: { strDeliveryNoteName: frm.docname },
+						freeze: true,
+						freeze_message: __("DHL etiket PDF'leri oluşturuluyor..."),
+						callback: function(dctR) {
+							if (dctR.message) {
+								if (dctR.message.op_result) {
+									frappe.show_alert(__("{0} PDF dosyası eklendi", [dctR.message.lst_file_urls.length]));
+								} else {
+									frappe.msgprint(__("Hata: {0}", [dctR.message.op_message]));
+								}
+							}
+							frm.reload_doc();
+						}
+					});
+				}, __("Kargo Etiketi Yazdır"));
+			}
 		}
 	}
 });
