@@ -68,6 +68,26 @@ frappe.ui.form.on("Delivery Note", {
 					askParcel(0);
 				}, __("Koli Bilgisi"));
 			}, __("Kargo Etiketi Yazdır"));
+			if (frm.doc.dhl_barcodes && frm.doc.dhl_barcodes.length > 0) {
+				frm.add_custom_button(__("DHL Etiket PDF"), function() {
+					frappe.call({
+						method: "dhl_ecommerce_integration.utils.generate_dhl_pdfs",
+						args: { strDeliveryNoteName: frm.docname },
+						freeze: true,
+						freeze_message: __("DHL etiket PDF'leri oluşturuluyor..."),
+						callback: function(dctR) {
+							if (dctR.message) {
+								if (dctR.message.op_result) {
+									frappe.show_alert(__("{0} PDF dosyası eklendi", [dctR.message.lst_file_urls.length]));
+								} else {
+									frappe.msgprint(__("Hata: {0}", [dctR.message.op_message]));
+								}
+							}
+							frm.reload_doc();
+						}
+					});
+				}, __("Kargo Etiketi Yazdır"));
+			}
 		}
 	}
 });

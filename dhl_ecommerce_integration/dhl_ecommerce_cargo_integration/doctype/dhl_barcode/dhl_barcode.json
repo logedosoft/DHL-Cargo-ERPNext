@@ -8,6 +8,8 @@
  "field_order": [
   "piece_number",
   "barcode",
+  "desi",
+  "kg",
   "barcode_zpl"
  ],
  "fields": [
@@ -19,7 +21,7 @@
   },
   {
    "fieldname": "barcode_zpl",
-   "fieldtype": "Small Text",
+   "fieldtype": "Code",
    "label": "Barcode ZPL"
   },
   {
@@ -27,13 +29,25 @@
    "fieldtype": "Data",
    "in_standard_filter": 1,
    "label": "Barcode"
+  },
+  {
+   "fieldname": "desi",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Desi"
+  },
+  {
+   "fieldname": "kg",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "KG"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-08 01:03:38.438732",
+ "modified": "2026-06-08 04:47:09.695719",
  "modified_by": "Administrator",
  "module": "DHL eCommerce Cargo Integration",
  "name": "DHL Barcode",

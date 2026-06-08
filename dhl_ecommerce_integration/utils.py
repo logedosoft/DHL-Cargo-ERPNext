@@ -432,6 +432,8 @@ def create_order(strDeliveryNoteName, lstParcels):
 							"dhl_shipment_id": dctBCResult.shipment_id or "",
 						})
 						for dctBarcode in (dctBCResult.barcodes or []):
+							dPieceIdx = dctBarcode.get("pieceNumber", 1) - 1
+							dctParcel = lstParcels[dPieceIdx] if dPieceIdx < len(lstParcels) else {}
 							docBarcode = frappe.get_doc({
 								"doctype": "DHL Barcode",
 								"parent": strDeliveryNoteName,
@@ -440,11 +442,19 @@ def create_order(strDeliveryNoteName, lstParcels):
 								"piece_number": dctBarcode.get("pieceNumber", 0),
 								"barcode_zpl": dctBarcode.get("value", ""),
 								"barcode": strReferenceId,
+								"desi": dctParcel.get("desi", 0),
+								"kg": dctParcel.get("kg", 0),
 							})
 							docBarcode.insert(ignore_permissions=True)
 						docDN.add_comment("Comment", "DHL CreateBarcode succeeded. InvoiceId: {0}, ShipmentId: {1}".format(
 							dctBCResult.invoice_id or "", dctBCResult.shipment_id or ""
 						))
+						dctPDFResult = _generate_pdfs_for_dn(strDeliveryNoteName)
+						if dctPDFResult.op_result:
+							dctResult.pdf_urls = dctPDFResult.lst_file_urls
+							docDN.add_comment("Comment", "DHL PDF labels generated: {0} files".format(len(dctPDFResult.lst_file_urls)))
+						else:
+							docDN.add_comment("Comment", "DHL PDF generation failed: " + dctPDFResult.op_message)
 					else:
 						dctResult.op_result = False
 						dctResult.op_message = "CreateOrder succeeded but CreateBarcode failed: " + dctBCResult.op_message
@@ -635,6 +645,71 @@ def _send_create_barcode(dctPayload, dctHeaders, strURL, docDHLSettings):
 		dctResult.op_message = "Exception during createBarcode: " + frappe.get_traceback()
 		frappe.log_error("DHL CreateBarcode Exception", dctResult.op_message)
 
+	return dctResult
+
+
+def _convert_zpl_to_pdf(strZpl):
+	strLabelaryURL = "http://api.labelary.com/v1/printers/8dpmm/labels/4x4/0/"
+	dctHeaders = {"accept": "application/pdf", "content-type": "application/x-www-form-urlencoded"}
+	bytPdf = None
+	try:
+		objResponse = requests.post(strLabelaryURL, data=strZpl, headers=dctHeaders, timeout=30)
+		if objResponse.status_code == 200:
+			bytPdf = objResponse.content
+		else:
+			frappe.log_error("DHL Labelary Error", "HTTP {0}: {1}".format(objResponse.status_code, objResponse.text[:500]))
+	except Exception:
+		frappe.log_error("DHL Labelary Exception", frappe.get_traceback())
+	return bytPdf
+
+
+def _attach_pdf_to_dn(strDNName, bytPdf, strFileName):
+	strFileURL = None
+	try:
+		docFile = frappe.get_doc({
+			"doctype": "File",
+			"file_name": strFileName,
+			"content": bytPdf,
+			"is_private": 1,
+			"attached_to_doctype": "Delivery Note",
+			"attached_to_name": strDNName,
+		})
+		docFile.insert(ignore_permissions=True)
+		strFileURL = docFile.file_url
+	except Exception:
+		frappe.log_error("DHL Attach PDF Exception", frappe.get_traceback())
+	return strFileURL
+
+
+def _generate_pdfs_for_dn(strDNName):
+	dctResult = frappe._dict({"op_result": True, "op_message": "", "lst_file_urls": []})
+	docDN = frappe.get_doc("Delivery Note", strDNName)
+	if not docDN.dhl_barcodes:
+		dctResult.op_result = False
+		dctResult.op_message = "No DHL barcodes found"
+	else:
+		for docBCRow in docDN.dhl_barcodes:
+			strZPL = docBCRow.barcode_zpl
+			if not strZPL:
+				continue
+			bytPdf = _convert_zpl_to_pdf(strZPL)
+			if bytPdf:
+				strFileName = "{0}_P{1}.pdf".format(strDNName, docBCRow.piece_number)
+				strFileURL = _attach_pdf_to_dn(strDNName, bytPdf, strFileName)
+				if strFileURL:
+					dctResult.lst_file_urls.append(strFileURL)
+		if not dctResult.lst_file_urls:
+			dctResult.op_result = False
+			dctResult.op_message = "PDF conversion failed for all barcodes"
+	return dctResult
+
+
+@frappe.whitelist()
+def generate_dhl_pdfs(strDeliveryNoteName):
+	docDN = frappe.get_doc("Delivery Note", strDeliveryNoteName)
+	if not (docDN.custom_ld_delivery_method == "DHL" and docDN.dhl_barcodes):
+		frappe.throw("No DHL barcodes found for this Delivery Note")
+	dctResult = _generate_pdfs_for_dn(strDeliveryNoteName)
 	return dctResult
 
 
