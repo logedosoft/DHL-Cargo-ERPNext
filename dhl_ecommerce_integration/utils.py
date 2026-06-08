@@ -248,19 +248,29 @@ def _refresh_cities_and_districts_background():
 			except Exception:
 				frappe.log_error("DHL Get Districts Error " + strCityCode, frappe.get_traceback())
 
-		docDHLSettings.set("cities", lstNewCities)
-		docDHLSettings.set("districts", lstNewDistricts)
-		docDHLSettings.modified = frappe.db.get_value("DHL Cargo Settings", "DHL Cargo Settings", "modified")
-		docDHLSettings.save(ignore_permissions=True)
+		frappe.db.delete("DHL City", {"parent": "DHL Cargo Settings"})
+		frappe.db.delete("DHL District", {"parent": "DHL Cargo Settings"})
 
-		dctResult.op_result = True
-		dctResult.op_message = "DHL Refresh Cities and Districts completed successfully."
-	except frappe.TimestampMismatchError:
-		docDHLSettings = frappe.get_doc("DHL Cargo Settings")
-		docDHLSettings.set("cities", lstNewCities)
-		docDHLSettings.set("districts", lstNewDistricts)
-		docDHLSettings.modified = frappe.db.get_value("DHL Cargo Settings", "DHL Cargo Settings", "modified")
-		docDHLSettings.save(ignore_permissions=True)
+		for dctCity in lstNewCities:
+			frappe.get_doc({
+				"doctype": "DHL City",
+				"parent": "DHL Cargo Settings",
+				"parentfield": "cities",
+				"parenttype": "DHL Cargo Settings",
+				**dctCity
+			}).insert(ignore_permissions=True)
+
+		for dctDistrict in lstNewDistricts:
+			frappe.get_doc({
+				"doctype": "DHL District",
+				"parent": "DHL Cargo Settings",
+				"parentfield": "districts",
+				"parenttype": "DHL Cargo Settings",
+				**dctDistrict
+			}).insert(ignore_permissions=True)
+
+		frappe.db.set_value("DHL Cargo Settings", "DHL Cargo Settings", "modified", frappe.utils.now())
+
 		dctResult.op_result = True
 		dctResult.op_message = "DHL Refresh Cities and Districts completed successfully."
 	except Exception:
@@ -268,7 +278,11 @@ def _refresh_cities_and_districts_background():
 		dctResult.op_message = "City and District Refresh Failed! " + frappe.get_traceback()
 		frappe.log_error("DHL Refresh Cities and Districts Error", dctResult.op_message)
 
-	docDHLSettings.add_comment("Comment", dctResult.op_message)
+	try:
+		docDHLSettings = frappe.get_doc("DHL Cargo Settings")
+		docDHLSettings.add_comment("Comment", dctResult.op_message)
+	except Exception:
+		pass
 
 	if dctResult.op_result:
 		frappe.publish_realtime(
