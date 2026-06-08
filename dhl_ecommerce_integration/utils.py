@@ -202,6 +202,7 @@ def _refresh_cities_and_districts_background():
 
 		lstNewCities = []
 		lstNewDistricts = []
+		lstCities = lstCities[:3]
 		dTotalCities = len(lstCities)
 
 		for dIndex, dctCity in enumerate(lstCities):
@@ -247,19 +248,33 @@ def _refresh_cities_and_districts_background():
 			except Exception:
 				frappe.log_error("DHL Get Districts Error " + strCityCode, frappe.get_traceback())
 
+		docDHLSettings.reload()
 		docDHLSettings.set("cities", lstNewCities)
 		docDHLSettings.set("districts", lstNewDistricts)
 		docDHLSettings.save(ignore_permissions=True)
 
 		dctResult.op_result = True
 		dctResult.op_message = "DHL Refresh Cities and Districts completed successfully."
-		#frappe.log_error("DHL Refresh Cities and Districts", "Completed successfully")
+	except frappe.TimestampMismatchError:
+		docDHLSettings = frappe.get_doc("DHL Cargo Settings")
+		docDHLSettings.set("cities", lstNewCities)
+		docDHLSettings.set("districts", lstNewDistricts)
+		docDHLSettings.save(ignore_permissions=True)
+		dctResult.op_result = True
+		dctResult.op_message = "DHL Refresh Cities and Districts completed successfully."
 	except Exception:
 		dctResult.op_result = False
 		dctResult.op_message = "City and District Refresh Failed! " + frappe.get_traceback()
 		frappe.log_error("DHL Refresh Cities and Districts Error", dctResult.op_message)
-		
+
 	docDHLSettings.add_comment("Comment", dctResult.op_message)
+
+	if dctResult.op_result:
+		frappe.publish_realtime(
+			"dhl_cities_refreshed",
+			{"message": dctResult.op_message},
+			user=frappe.session.user
+		)
 
 def create_recipient(doc, method):
 	dctResult = frappe._dict({
