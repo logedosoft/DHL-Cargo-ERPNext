@@ -81,6 +81,23 @@ def get_custom_fields():
                 "options": "DHL Barcode",
                 "insert_after": "dhl_shipment_id",
             },
+            {
+                "fieldname": "dhl_shipment_status",
+                "fieldtype": "Select",
+                "label": "DHL Shipment Status",
+                "options": "\nPending\nIn Transfer\nIn Transit\nOut for Delivery\nDelivered\nDelivery Failed\nReturning\nSupport Needed\nNot Found",
+                "read_only": 1,
+                "allow_on_submit": 1,
+                "insert_after": "dhl_barcodes",
+            },
+            {
+                "fieldname": "dhl_last_tracked",
+                "fieldtype": "Datetime",
+                "label": "DHL Last Tracked",
+                "read_only": 1,
+                "allow_on_submit": 1,
+                "insert_after": "dhl_shipment_status",
+            },
         ],
     }
 

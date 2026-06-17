@@ -163,23 +163,23 @@ doc_events = {
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
+scheduler_events = {
 # 	"all": [
 # 		"dhl_ecommerce_integration.tasks.all"
 # 	],
 # 	"daily": [
 # 		"dhl_ecommerce_integration.tasks.daily"
 # 	],
-# 	"hourly": [
-# 		"dhl_ecommerce_integration.tasks.hourly"
-# 	],
+	"hourly": [
+		"dhl_ecommerce_integration.tasks.dhl_hourly_tracking"
+	],
 # 	"weekly": [
 # 		"dhl_ecommerce_integration.tasks.weekly"
 # 	],
 # 	"monthly": [
 # 		"dhl_ecommerce_integration.tasks.monthly"
 # 	],
-# }
+}
 
 # Testing
 # -------
