@@ -791,6 +791,10 @@ def cancel_dhl_order(strReferenceId):
 					dctResult.op_message = "Exception during cancelShipment: " + frappe.get_traceback()
 					frappe.log_error("DHL Cancel Shipment Exception", dctResult.op_message)
 
+				docDN = frappe.get_doc("Delivery Note", strReferenceId)
+				strStatus = "Başarılı" if dctResult.op_result else "Başarısız"
+				docDN.add_comment("Comment", "DHL Kargo İptal — {0}: {1}".format(strStatus, dctResult.op_message))
+
 	return dctResult
 
 

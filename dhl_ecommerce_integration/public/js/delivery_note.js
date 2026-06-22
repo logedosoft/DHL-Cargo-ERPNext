@@ -88,6 +88,31 @@ frappe.ui.form.on("Delivery Note", {
 					});
 				}, __("Kargo Etiketi Yazdır"));
 			}
+			if (frm.doc.dhl_reference_id) {
+				frm.add_custom_button(__("DHL Kargo İptal Et"), function() {
+					frappe.confirm(
+						__("{0} numaralı DHL kargosu iptal edilecek. Emin misiniz?", [frm.doc.dhl_reference_id]),
+						function() {
+							frappe.call({
+								method: "dhl_ecommerce_integration.utils.cancel_dhl_order",
+								args: { strReferenceId: frm.doc.dhl_reference_id },
+								freeze: true,
+								freeze_message: __("DHL kargosu iptal ediliyor..."),
+								callback: function(dctR) {
+									if (dctR.message) {
+										if (dctR.message.op_result) {
+											frappe.show_alert(__("DHL kargosu iptal edildi."));
+										} else {
+											frappe.msgprint(__("Hata: {0}", [dctR.message.op_message]));
+										}
+									}
+									frm.reload_doc();
+								}
+							});
+						}
+					);
+				}, __("Kargo Etiketi Yazdır"));
+			}
 		}
 	}
 });
