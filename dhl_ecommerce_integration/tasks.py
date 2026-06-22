@@ -7,7 +7,7 @@ import requests
 from urllib.parse import quote
 from frappe.utils import add_to_date, now_datetime
 
-from dhl_ecommerce_integration.utils import get_token
+from dhl_ecommerce_integration.utils import get_token, _log_api_request
 
 DHL_STATUS_MAP = {
 	1: "Pending",
@@ -200,6 +200,7 @@ def _dhl_get_with_retry(strURL, dctHeaders, docSettings, strLogTitle):
 
 	for dAttempt in range(MAX_RETRY_ATTEMPTS):
 		try:
+			_log_api_request(docSettings, strLogTitle + " Request", "GET", strURL, dctHeaders)
 			objResponse = requests.get(strURL, headers=dctHeaders, timeout=30)
 			dctResult.status_code = objResponse.status_code
 

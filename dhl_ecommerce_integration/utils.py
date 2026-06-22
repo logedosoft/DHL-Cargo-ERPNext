@@ -8,14 +8,27 @@ from frappe.utils import get_datetime_str
 
 # Helper function to convert Turkish characters to uppercase for DHL city-district maps
 def uppercase_tr(s):
-    if not s: 
-        return ""
-    
-    # 1. Translate specific Turkish lowercase letters to uppercase
-    tr = str.maketrans("ıişüğçö", "IİŞÜĞÇÖ")
-    
-    # 2. Apply translation, then standard upper() for the rest (a-z)
-    return s.translate(tr).upper()
+	if not s:
+		return ""
+
+	# 1. Translate specific Turkish lowercase letters to uppercase
+	tr = str.maketrans("ıişüğçö", "IİŞÜĞÇÖ")
+
+	# 2. Apply translation, then standard upper() for the rest (a-z)
+	return s.translate(tr).upper()
+
+def _log_api_request(docDHLSettings, strTitle, strMethod, strURL, dctHeaders, dctPayload=None):
+	if docDHLSettings.enable_detailed_logs:
+		lstExcludeKeys = ("Authorization", "x-ibm-client-secret")
+		dctSafeHeaders = {k: v for k, v in dctHeaders.items() if k not in lstExcludeKeys}
+		dctLog = {
+			"method": strMethod,
+			"url": strURL,
+			"headers": dctSafeHeaders,
+		}
+		if dctPayload is not None:
+			dctLog["payload"] = dctPayload
+		frappe.log_error(strTitle, frappe.as_json(dctLog))
 
 def _is_jwt_exp_valid(strJWT):
 	"""Decode the JWT's exp claim and check if the token is still valid.
@@ -89,10 +102,15 @@ def get_token(blnForce=False):
 	}
 
 	try:
+		_log_api_request(docDHLSettings, "DHL Get Token Request", "POST", strTokenURL, dctHeaders, dctPayload)
 		response = requests.post(strTokenURL, json=dctPayload, headers=dctHeaders, timeout=30)
 
 		if docDHLSettings.enable_detailed_logs:
-			frappe.log_error("DHL Get Token Response", frappe.as_json(response.json()))
+			frappe.log_error("DHL Get Token Response", frappe.as_json({
+				"status_code": response.status_code,
+				"headers": dict(response.headers),
+				"body": response.text
+			}))
 
 		dctResponse = response.json()
 		strJWT = dctResponse.get("jwt")
@@ -181,11 +199,16 @@ def _refresh_cities_and_districts_background():
 
 	try:
 		strCitiesURL = strBaseURL + "/mngapi/api/cbsinfoapi/getcities"
+		_log_api_request(docDHLSettings, "DHL Get Cities Request", "GET", strCitiesURL, dctHeaders)
 		response = requests.get(strCitiesURL, headers=dctHeaders, timeout=30)
 		lstCities = response.json()
 
 		if docDHLSettings.enable_detailed_logs:
-			frappe.log_error("DHL Get Cities Response", frappe.as_json(lstCities))
+			frappe.log_error("DHL Get Cities Response", frappe.as_json({
+				"status_code": response.status_code,
+				"headers": dict(response.headers),
+				"body": response.text
+			}))
 
 		# Preserve existing examples keyed by city code
 		dctExistingCityExamples = {}
@@ -224,11 +247,16 @@ def _refresh_cities_and_districts_background():
 
 			strDistrictsURL = strBaseURL + "/mngapi/api/cbsinfoapi/getdistricts/" + strCityCode
 			try:
+				_log_api_request(docDHLSettings, "DHL Get Districts Request " + strCityCode, "GET", strDistrictsURL, dctHeaders)
 				dctDistrictResponse = requests.get(strDistrictsURL, headers=dctHeaders, timeout=30)
 				lstDistricts = dctDistrictResponse.json()
 
 				if docDHLSettings.enable_detailed_logs:
-					frappe.log_error("DHL Get Districts Response " + strCityCode, frappe.as_json(lstDistricts))
+					frappe.log_error("DHL Get Districts Response " + strCityCode, frappe.as_json({
+						"status_code": dctDistrictResponse.status_code,
+						"headers": dict(dctDistrictResponse.headers),
+						"body": dctDistrictResponse.text
+					}))
 
 				for dctDistrict in lstDistricts:
 					strDistrictCode = dctDistrict.get("code", "")
@@ -348,6 +376,7 @@ def _send_create_recipient(doc, docDHLSettings, docAddress, strCityCode, strDist
 	}
 
 	try:
+		_log_api_request(docDHLSettings, "DHL Create Recipient Request", "POST", strCreateURL, dctHeaders, dctPayload)
 		response = requests.post(strCreateURL, json=dctPayload, headers=dctHeaders, timeout=30)
 
 		if docDHLSettings.enable_detailed_logs:
@@ -575,6 +604,7 @@ def _send_create_order(dctPayload, dctHeaders, strURL, docDHLSettings):
 	})
 
 	try:
+		_log_api_request(docDHLSettings, "DHL CreateOrder Request", "POST", strURL, dctHeaders, dctPayload)
 		objResponse = requests.post(strURL, json=dctPayload, headers=dctHeaders, timeout=30)
 
 		if docDHLSettings.enable_detailed_logs:
@@ -614,6 +644,7 @@ def _send_create_barcode(dctPayload, dctHeaders, strURL, docDHLSettings):
 	dctResult = frappe._dict({"op_result": False, "op_message": ""})
 
 	try:
+		_log_api_request(docDHLSettings, "DHL CreateBarcode Request", "POST", strURL, dctHeaders, dctPayload)
 		objResponse = requests.post(strURL, json=dctPayload, headers=dctHeaders, timeout=30)
 
 		if docDHLSettings.enable_detailed_logs:
