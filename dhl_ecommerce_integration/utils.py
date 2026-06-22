@@ -744,6 +744,56 @@ def generate_dhl_pdfs(strDeliveryNoteName):
 	return dctResult
 
 
+@frappe.whitelist()
+def cancel_dhl_order(strReferenceId):
+	"""Cancels a DHL shipment by reference ID via the cancelshipment API."""
+	dctResult = frappe._dict({"op_result": False, "op_message": ""})
+
+	if not strReferenceId or not strReferenceId.strip():
+		dctResult.op_message = "Reference ID is required"
+	else:
+		strReferenceId = strReferenceId.strip().upper()
+		docDHLSettings = frappe.get_single("DHL Cargo Settings")
+		if not docDHLSettings.enabled:
+			dctResult.op_message = "DHL Cargo Settings is not enabled"
+		else:
+			dctTokenResult = get_token()
+			if not dctTokenResult.op_result:
+				dctResult.op_message = "Get Token failed: " + dctTokenResult.op_message
+			else:
+				dctPayload = {"referenceId": strReferenceId}
+				dctHeaders = {
+					"x-ibm-client-id": docDHLSettings.client_id,
+					"x-ibm-client-secret": docDHLSettings.get_password("client_secret"),
+					"Content-Type": "application/json",
+					"Authorization": "Bearer " + dctTokenResult.token
+				}
+				strURL = docDHLSettings.web_service_url + "/mngapi/api/barcodecmdapi/cancelshipment"
+
+				try:
+					_log_api_request(docDHLSettings, "DHL Cancel Shipment Request", "POST", strURL, dctHeaders, dctPayload)
+					objResponse = requests.post(strURL, json=dctPayload, headers=dctHeaders, timeout=30)
+
+					if docDHLSettings.enable_detailed_logs:
+						frappe.log_error("DHL Cancel Shipment Response", frappe.as_json({
+							"status_code": objResponse.status_code,
+							"headers": dict(objResponse.headers),
+							"body": objResponse.text
+						}))
+
+					if objResponse.status_code == 200:
+						dctResult.op_result = True
+						dctResult.op_message = "Shipment {0} cancelled successfully".format(strReferenceId)
+					else:
+						dctResult.op_message = "HTTP {0}: {1}".format(objResponse.status_code, objResponse.text[:500])
+						frappe.log_error("DHL Cancel Shipment Error", dctResult.op_message)
+				except Exception:
+					dctResult.op_message = "Exception during cancelShipment: " + frappe.get_traceback()
+					frappe.log_error("DHL Cancel Shipment Exception", dctResult.op_message)
+
+	return dctResult
+
+
 def validate_address(doc, method):
 	#Validates given City and County (District) against DHL Settings city - district pairs
 	#Only if DHL Settings enabled and address is for Turkey.
