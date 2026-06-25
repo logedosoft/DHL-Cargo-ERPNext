@@ -578,7 +578,7 @@ def _build_create_barcode_payload(strReferenceId, lstParcels, strFirstItemGroup)
 		"billOfLandingId": "",
 		"isCOD": 0,
 		"codAmount": 0,
-		"printReferenceBarcodeOnError": 1,
+		"printReferenceBarcodeOnError": 0,
 		"message": "",
 		"additionalContent1": "",
 		"additionalContent2": "",
@@ -761,7 +761,8 @@ def cancel_dhl_order(strReferenceId):
 			if not dctTokenResult.op_result:
 				dctResult.op_message = "Get Token failed: " + dctTokenResult.op_message
 			else:
-				dctPayload = {"referenceId": strReferenceId}
+				strShipmentId = frappe.db.get_value("Delivery Note", strReferenceId, "dhl_shipment_id") or ""
+				dctPayload = {"referenceId": strReferenceId, "shipmentId": strShipmentId}
 				dctHeaders = {
 					"x-ibm-client-id": docDHLSettings.client_id,
 					"x-ibm-client-secret": docDHLSettings.get_password("client_secret"),
@@ -771,8 +772,8 @@ def cancel_dhl_order(strReferenceId):
 				strURL = docDHLSettings.web_service_url + "/mngapi/api/barcodecmdapi/cancelshipment"
 
 				try:
-					_log_api_request(docDHLSettings, "DHL Cancel Shipment Request", "POST", strURL, dctHeaders, dctPayload)
-					objResponse = requests.post(strURL, json=dctPayload, headers=dctHeaders, timeout=30)
+					_log_api_request(docDHLSettings, "DHL Cancel Shipment Request", "PUT", strURL, dctHeaders, dctPayload)
+					objResponse = requests.put(strURL, json=dctPayload, headers=dctHeaders, timeout=30)
 
 					if docDHLSettings.enable_detailed_logs:
 						frappe.log_error("DHL Cancel Shipment Response", frappe.as_json({
