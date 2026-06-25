@@ -29,7 +29,6 @@ This Frappe/ERPNext app connects your ERPNext instance to the **DHL eCommerce RE
 | Copy-pasting tracking numbers | `referenceId` and barcode stored on the Delivery Note |
 | Lost shipping labels | ZPL string saved to the document; reprint anytime |
 | Expired JWT tokens | Automatic token refresh with expiry caching |
-| No audit trail | Full request/response logging in DHL Cargo Log DocType |
 
 ---
 
@@ -142,15 +141,6 @@ text
 ### DHL Cargo Settings
 Stores all credentials and JWT cache. One record per site.
 
-### DHL Cargo Log
-Immutable audit log. Every API call records:
-- Endpoint URL
-- Request body (JSON)
-- Response body (JSON)
-- HTTP status code
-- Timestamp
-- Linked Delivery Note
-
 ---
 
 ## Troubleshooting
@@ -160,7 +150,7 @@ Immutable audit log. Every API call records:
 | `401 Unauthorized` | Expired or missing JWT | Token auto-refreshes; check `customerNumber`/`password` |
 | `Branch not found` | Recipient district unknown | Use `createRecipient` first; contact MNG for manual branch mapping |
 | `referenceId duplicate` | Same ID used twice | Ensure unique ID per Delivery Note (use DN name + timestamp) |
-| ZPL label blank | `barcodes[].value` empty | Check `printReferenceBarcodeOnError` = `1`; review DHL Cargo Log |
+| ZPL label blank | `barcodes[].value` empty | Check `printReferenceBarcodeOnError` = `1`; review Error Log |
 
 ---
 
