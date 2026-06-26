@@ -148,6 +148,9 @@ doc_events = {
 	"Sales Order": {
 		"on_submit": "dhl_ecommerce_integration.utils.create_recipient"
 	},
+	"Delivery Note": {
+		"on_submit": "dhl_ecommerce_integration.utils.on_submit_delivery_note"
+	},
 	"Address": {
 		"validate": "dhl_ecommerce_integration.utils.validate_address"
 	}

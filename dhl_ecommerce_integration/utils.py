@@ -401,8 +401,67 @@ def _send_create_recipient(doc, docDHLSettings, docAddress, strCityCode, strDist
 
 	return dctResult
 
+
+def on_submit_delivery_note(doc, method):
+	if doc.custom_ld_delivery_method == "DHL":
+		if frappe.db.get_single_value("DHL Cargo Settings", "enabled"):
+			if not doc.dhl_barcodes or len(doc.dhl_barcodes) == 0:
+				frappe.throw(_("DHL Barcode rows (desi/kg) must be filled before submitting a DHL Delivery Note."))
+			else:
+				_create_order_on_submit(doc)
+
+
+def _create_order_on_submit(doc):
+	dctResult = frappe._dict({
+		"op_result": False,
+		"op_message": ""
+	})
+
+	docDHLSettings = frappe.get_single("DHL Cargo Settings")
+	if not docDHLSettings.enabled:
+		frappe.throw("DHL Cargo Settings is not enabled!")
+	elif not doc.shipping_address_name:
+		frappe.throw("Shipping address is required for DHL cargo")
+	else:
+		lstParcels = []
+		for docRow in doc.dhl_barcodes:
+			lstParcels.append({
+				"desi": docRow.desi or 1,
+				"kg": docRow.kg or 1,
+			})
+
+		dctTokenResult = get_token()
+		if not dctTokenResult.op_result:
+			frappe.throw("Get Token failed: " + dctTokenResult.op_message)
+		else:
+			dctPayload = _build_create_order_payload(doc, lstParcels)
+			dctHeaders = {
+				"x-ibm-client-id": docDHLSettings.client_id,
+				"x-ibm-client-secret": docDHLSettings.get_password("client_secret"),
+				"Content-Type": "application/json",
+				"Authorization": "Bearer " + dctTokenResult.token
+			}
+			strURL = docDHLSettings.web_service_url + "/mngapi/api/standardcmdapi/createOrder"
+			dctResult = _send_create_order(dctPayload, dctHeaders, strURL, docDHLSettings)
+
+			if dctResult.op_result:
+				frappe.db.set_value("Delivery Note", doc.name, {
+					"dhl_reference_id": dctResult.reference_id or "",
+					"dhl_order_invoice_id": dctResult.order_invoice_id or "",
+					"dhl_shipper_branch_code": dctResult.shipper_branch_code or "",
+				})
+				doc.add_comment("Comment", "DHL CreateOrder succeeded. OrderInvoiceId: {0}, ShipperBranchCode: {1}, ReferenceId: {2}".format(
+					dctResult.order_invoice_id or "", dctResult.shipper_branch_code or "", dctResult.reference_id or ""
+				))
+			else:
+				doc.add_comment("Comment", "DHL CreateOrder failed: " + dctResult.op_message)
+				frappe.throw("DHL CreateOrder failed: " + dctResult.op_message)
+
+	return dctResult
+
+
 @frappe.whitelist()
-def create_order(strDeliveryNoteName, lstParcels):
+def create_barcode(strDeliveryNoteName, lstParcels):
 	dctResult = frappe._dict({
 		"op_result": False,
 		"op_message": ""
@@ -416,38 +475,24 @@ def create_order(strDeliveryNoteName, lstParcels):
 		frappe.throw("DHL Cargo Settings is not enabled!")
 	else:
 		docDN = frappe.get_doc("Delivery Note", strDeliveryNoteName)
-		if docDN.custom_ld_delivery_method != "DHL":
-			frappe.throw("Delivery method is not DHL for {0}".format(docDN.name))
-		elif not docDN.shipping_address_name:
-			frappe.throw("Shipping address is required for DHL cargo")
-		else:
-			dctTokenResult = get_token()
-			if not dctTokenResult.op_result:
-				frappe.throw("Get Token failed: " + dctTokenResult.op_message)
+		if docDN.custom_ld_delivery_method == "DHL":
+			if not docDN.dhl_reference_id:
+				frappe.throw("CreateOrder must be completed before barcode generation for {0}".format(docDN.name))
 			else:
-				dctPayload = _build_create_order_payload(docDN, lstParcels)
-				dctHeaders = {
-					"x-ibm-client-id": docDHLSettings.client_id,
-					"x-ibm-client-secret": docDHLSettings.get_password("client_secret"),
-					"Content-Type": "application/json",
-					"Authorization": "Bearer " + dctTokenResult.token
-				}
-				strURL = docDHLSettings.web_service_url + "/mngapi/api/standardcmdapi/createOrder"
-				dctResult = _send_create_order(dctPayload, dctHeaders, strURL, docDHLSettings)
+				dctTokenResult = get_token()
+				if not dctTokenResult.op_result:
+					frappe.throw("Get Token failed: " + dctTokenResult.op_message)
+				else:
+					strReferenceId = docDN.dhl_reference_id
+					lstItemGroups = list(dict.fromkeys([item.item_group for item in docDN.items if item.item_group]))
+					strFirstItemGroup = lstItemGroups[0] if lstItemGroups else ""
 
-				if dctResult.op_result:
-					frappe.db.set_value("Delivery Note", strDeliveryNoteName, {
-						"dhl_reference_id": dctResult.reference_id or "",
-						"dhl_order_invoice_id": dctResult.order_invoice_id or "",
-						"dhl_shipper_branch_code": dctResult.shipper_branch_code or "",
-					})
-					docDN.add_comment("Comment", "DHL CreateOrder succeeded. OrderInvoiceId: {0}, ShipperBranchCode: {1}, ReferenceId: {2}".format(
-						dctResult.order_invoice_id or "", dctResult.shipper_branch_code or "", dctResult.reference_id or ""
-					))
-
-					strReferenceId = dctResult.reference_id
-					lstOrderPieces = dctPayload["orderPieceList"]
-					strFirstItemGroup = lstOrderPieces[0]["content"] if lstOrderPieces else ""
+					dctHeaders = {
+						"x-ibm-client-id": docDHLSettings.client_id,
+						"x-ibm-client-secret": docDHLSettings.get_password("client_secret"),
+						"Content-Type": "application/json",
+						"Authorization": "Bearer " + dctTokenResult.token
+					}
 					dctBCPayload = _build_create_barcode_payload(strReferenceId, lstParcels, strFirstItemGroup)
 					strBCURL = docDHLSettings.web_service_url + "/mngapi/api/barcodecmdapi/createbarcode"
 					dctBCResult = _send_create_barcode(dctBCPayload, dctHeaders, strBCURL, docDHLSettings)
@@ -456,6 +501,8 @@ def create_order(strDeliveryNoteName, lstParcels):
 						dctResult.barcodes = dctBCResult.barcodes
 						dctResult.invoice_id = dctBCResult.invoice_id
 						dctResult.shipment_id = dctBCResult.shipment_id
+						dctResult.op_result = True
+						dctResult.op_message = "CreateBarcode succeeded"
 						frappe.db.set_value("Delivery Note", strDeliveryNoteName, {
 							"dhl_barcode_invoice_id": dctBCResult.invoice_id or "",
 							"dhl_shipment_id": dctBCResult.shipment_id or "",
@@ -486,10 +533,8 @@ def create_order(strDeliveryNoteName, lstParcels):
 							docDN.add_comment("Comment", "DHL PDF generation failed: " + dctPDFResult.op_message)
 					else:
 						dctResult.op_result = False
-						dctResult.op_message = "CreateOrder succeeded but CreateBarcode failed: " + dctBCResult.op_message
+						dctResult.op_message = "CreateBarcode failed: " + dctBCResult.op_message
 						docDN.add_comment("Comment", "DHL CreateBarcode failed: " + dctBCResult.op_message)
-				else:
-					docDN.add_comment("Comment", "DHL CreateOrder failed: " + dctResult.op_message)
 
 	return dctResult
 
