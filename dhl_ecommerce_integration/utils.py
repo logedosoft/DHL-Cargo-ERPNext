@@ -330,7 +330,7 @@ def create_recipient(doc, method):
 					else:
 						dctResult = _send_create_recipient(doc, docDHLSettings, docAddress, strCityCode, strDistrictCode, dctTokenResult.token)
 
-	doc.add_comment("Comment", dctResult.op_message)
+		doc.add_comment("Comment", dctResult.op_message)
 	return dctResult
 
 
