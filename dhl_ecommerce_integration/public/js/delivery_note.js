@@ -20,7 +20,7 @@ frappe.ui.form.on("Delivery Note", {
 					function askParcel(dIdx) {
 						if (dIdx >= dTotal) {
 							frappe.call({
-								method: "dhl_ecommerce_integration.utils.create_order",
+								method: "dhl_ecommerce_integration.utils.create_barcode",
 								args: {
 									strDeliveryNoteName: frm.docname,
 									lstParcels: lstParcels
