@@ -1,7 +1,7 @@
 # Copyright (c) 2026, Logedosoft Business Solutions and contributors
 # For license information, please see license.txt
 
-import frappe, json, requests, base64
+import frappe, json, requests, base64, time
 from datetime import datetime, timedelta, timezone
 from frappe import msgprint, _
 from frappe.utils import get_datetime_str
@@ -724,14 +724,23 @@ def _send_create_barcode(dctPayload, dctHeaders, strURL, docDHLSettings):
 	return dctResult
 
 
-def _convert_zpl_to_pdf(strZpl):
+def _convert_zpl_to_pdf(lstZpl):
 	strLabelaryURL = "http://api.labelary.com/v1/printers/8dpmm/labels/4x4/0/"
 	dctHeaders = {"accept": "application/pdf", "content-type": "application/x-www-form-urlencoded"}
+	strCombinedZpl = "\n".join(lstZpl)
 	bytPdf = None
 	try:
-		objResponse = requests.post(strLabelaryURL, data=strZpl, headers=dctHeaders, timeout=30)
+		objResponse = requests.post(strLabelaryURL, data=strCombinedZpl, headers=dctHeaders, timeout=30)
 		if objResponse.status_code == 200:
 			bytPdf = objResponse.content
+		elif objResponse.status_code == 429:
+			dRetryAfter = int(objResponse.headers.get("Retry-After", 1))
+			time.sleep(dRetryAfter)
+			objResponse = requests.post(strLabelaryURL, data=strCombinedZpl, headers=dctHeaders, timeout=30)
+			if objResponse.status_code == 200:
+				bytPdf = objResponse.content
+			else:
+				frappe.log_error("DHL Labelary Error", "HTTP {0}: {1}".format(objResponse.status_code, objResponse.text[:500]))
 		else:
 			frappe.log_error("DHL Labelary Error", "HTTP {0}: {1}".format(objResponse.status_code, objResponse.text[:500]))
 	except Exception:
@@ -764,19 +773,20 @@ def _generate_pdfs_for_dn(strDNName):
 		dctResult.op_result = False
 		dctResult.op_message = "No DHL barcodes found"
 	else:
-		for docBCRow in docDN.dhl_barcodes:
-			strZPL = docBCRow.barcode_zpl
-			if not strZPL:
-				continue
-			bytPdf = _convert_zpl_to_pdf(strZPL)
+		lstZpl = [docBCRow.barcode_zpl for docBCRow in docDN.dhl_barcodes if docBCRow.barcode_zpl]
+		if not lstZpl:
+			dctResult.op_result = False
+			dctResult.op_message = "No ZPL data found in barcodes"
+		else:
+			bytPdf = _convert_zpl_to_pdf(lstZpl)
 			if bytPdf:
-				strFileName = "{0}_P{1}.pdf".format(strDNName, docBCRow.piece_number)
+				strFileName = "DHL_Kargo_Etiketi_{0}.pdf".format(strDNName)
 				strFileURL = _attach_pdf_to_dn(strDNName, bytPdf, strFileName)
 				if strFileURL:
 					dctResult.lst_file_urls.append(strFileURL)
-		if not dctResult.lst_file_urls:
-			dctResult.op_result = False
-			dctResult.op_message = "PDF conversion failed for all barcodes"
+			if not dctResult.lst_file_urls:
+				dctResult.op_result = False
+				dctResult.op_message = "PDF conversion failed"
 	return dctResult
 
 
