@@ -773,20 +773,18 @@ def _generate_pdfs_for_dn(strDNName):
 		dctResult.op_result = False
 		dctResult.op_message = "No DHL barcodes found"
 	else:
-		lstZpl = [docBCRow.barcode_zpl for docBCRow in docDN.dhl_barcodes if docBCRow.barcode_zpl]
-		if not lstZpl:
-			dctResult.op_result = False
-			dctResult.op_message = "No ZPL data found in barcodes"
-		else:
-			bytPdf = _convert_zpl_to_pdf(lstZpl)
+		for docBCRow in docDN.dhl_barcodes:
+			if not docBCRow.barcode_zpl:
+				continue
+			bytPdf = _convert_zpl_to_pdf([docBCRow.barcode_zpl])
 			if bytPdf:
-				strFileName = "DHL_Kargo_Etiketi_{0}.pdf".format(strDNName)
+				strFileName = "DHL_Etiketi_{0}_Parca{1}.pdf".format(strDNName, docBCRow.piece_number)
 				strFileURL = _attach_pdf_to_dn(strDNName, bytPdf, strFileName)
 				if strFileURL:
 					dctResult.lst_file_urls.append(strFileURL)
-			if not dctResult.lst_file_urls:
-				dctResult.op_result = False
-				dctResult.op_message = "PDF conversion failed"
+		if not dctResult.lst_file_urls:
+			dctResult.op_result = False
+			dctResult.op_message = "PDF generation failed"
 	return dctResult
 
 
