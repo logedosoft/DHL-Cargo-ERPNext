@@ -509,6 +509,7 @@ def create_barcode(strDeliveryNoteName, lstParcels):
 						})
 						for dctBarcode in (dctBCResult.barcodes or []):
 							dPieceIdx = dctBarcode.get("pieceNumber", 1) - 1
+							dPieceNumber = dPieceIdx + 1
 							dctParcel = lstParcels[dPieceIdx] if dPieceIdx < len(lstParcels) else {}
 							docBarcode = frappe.get_doc({
 								"doctype": "DHL Barcode",
@@ -517,7 +518,7 @@ def create_barcode(strDeliveryNoteName, lstParcels):
 								"parentfield": "dhl_barcodes",
 								"piece_number": dctBarcode.get("pieceNumber", 0),
 								"barcode_zpl": dctBarcode.get("value", ""),
-								"barcode": strReferenceId,
+								"barcode": _make_piece_barcode(strReferenceId, dPieceNumber, len(lstParcels)),
 								"desi": dctParcel.get("desi", 0),
 								"kg": dctParcel.get("kg", 0),
 							})
@@ -537,6 +538,17 @@ def create_barcode(strDeliveryNoteName, lstParcels):
 						docDN.add_comment("Comment", "DHL CreateBarcode failed: " + dctBCResult.op_message)
 
 	return dctResult
+
+
+def _make_piece_barcode(strReferenceId, dPieceNumber, dTotalPieces):
+	if dTotalPieces <= 1:
+		return strReferenceId
+	strSuffix = "-{0:02d}".format(dPieceNumber)
+	if len(strReferenceId) + len(strSuffix) > 30:
+		strSuffix = "-{0}".format(dPieceNumber)
+	if len(strReferenceId) + len(strSuffix) > 30:
+		strReferenceId = strReferenceId[:30 - len(strSuffix)]
+	return strReferenceId + strSuffix
 
 
 def _build_create_order_payload(docDN, lstParcels):
@@ -567,9 +579,9 @@ def _build_create_order_payload(docDN, lstParcels):
 	strAddress = (docAddress.address_line1 or "") + " " + (docAddress.address_line2 or "")
 
 	lstOrderPieces = []
-	for dctParcel in lstParcels:
+	for i, dctParcel in enumerate(lstParcels, start=1):
 		lstOrderPieces.append({
-			"barcode": strReferenceId,
+			"barcode": _make_piece_barcode(strReferenceId, i, len(lstParcels)),
 			"desi": dctParcel.get("desi", 1),
 			"kg": dctParcel.get("kg", 1),
 			"content": strFirstItemGroup
@@ -618,6 +630,7 @@ def _build_create_order_payload(docDN, lstParcels):
 
 
 def _build_create_barcode_payload(strReferenceId, lstParcels, strFirstItemGroup):
+	dTotalPieces = len(lstParcels)
 	dctPayload = {
 		"referenceId": strReferenceId,
 		"billOfLandingId": "",
@@ -632,11 +645,11 @@ def _build_create_barcode_payload(strReferenceId, lstParcels, strFirstItemGroup)
 		"packagingType": 3,
 		"orderPieceList": [
 			{
-				"barcode": strReferenceId,
+				"barcode": _make_piece_barcode(strReferenceId, i, dTotalPieces),
 				"desi": dctParcel.get("desi", 1),
 				"kg": dctParcel.get("kg", 1),
 				"content": strFirstItemGroup
-			} for dctParcel in lstParcels
+			} for i, dctParcel in enumerate(lstParcels, start=1)
 		]
 	}
 	return dctPayload
