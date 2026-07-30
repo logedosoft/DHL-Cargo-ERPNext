@@ -5,6 +5,7 @@ import frappe, json, requests, base64, time
 from datetime import datetime, timedelta, timezone
 from frappe import msgprint, _
 from frappe.utils import get_datetime_str
+from urllib.parse import quote
 
 # Helper function to convert Turkish characters to uppercase for DHL city-district maps
 def uppercase_tr(s):
@@ -16,6 +17,18 @@ def uppercase_tr(s):
 
 	# 2. Apply translation, then standard upper() for the rest (a-z)
 	return s.translate(tr).upper()
+
+RETURN_DHL_STATUS_MAP = {
+	1: "Order Created",
+	2: "In Transit",
+	3: "In Transit",
+	4: "In Transit",
+	5: "Delivered",
+	6: "Delivery Failed",
+	7: "In Transit",
+	8: "Support Needed",
+}
+
 
 def _log_api_request(docDHLSettings, strTitle, strMethod, strURL, dctHeaders, dctPayload=None):
 	if docDHLSettings.enable_detailed_logs:
@@ -890,7 +903,6 @@ def _build_create_return_order_payload(strReferenceId, docSO, docAddress, strIte
 
 	strMobile = docAddress.phone or docDHLSettings.default_phone or ""
 	strEmail = docAddress.email_id or docDHLSettings.default_email or ""
-	intCustomerId = int(docDHLSettings.customer_number or 0)
 
 	dctPayload = {
 		"order": {
@@ -920,7 +932,7 @@ def _build_create_return_order_payload(strReferenceId, docSO, docAddress, strIte
 			}
 		],
 		"shipper": {
-			"customerId": intCustomerId,
+			"customerId": "",
 			"refCustomerId": "",
 			"cityCode": int(strCityCode),
 			"districtCode": int(strDistrictCode),
@@ -1013,63 +1025,103 @@ def check_return_status(strDHLReturnOrderName):
 			if not dctTokenResult.op_result:
 				dctResult.op_message = "Get Token failed: " + dctTokenResult.op_message
 			else:
+				strBaseURL = docDHLSettings.web_service_url
+				strReferenceId = docReturn.reference_id
 				dctHeaders = {
 					"x-ibm-client-id": docDHLSettings.client_id,
 					"x-ibm-client-secret": docDHLSettings.get_password("client_secret"),
 					"Content-Type": "application/json",
 					"Authorization": "Bearer " + dctTokenResult.token,
 				}
-				dctPayload = {
-					"referenceId": docReturn.reference_id,
-					"shipmentId": None,
-					"invoiceSerialNumber": None,
-					"invoiceNumber": None,
-					"barcode": None,
-					"shipmentReleaseDate": None,
-				}
-				strURL = docDHLSettings.web_service_url + "/mngapi/api/plusqueryapi/checkReturnOrder"
+				strNewStatus = ""
+				strInfoMessage = ""
 
+				strStatusURL = strBaseURL + "/mngapi/api/standardqueryapi/getshipmentstatus/" + quote(strReferenceId, safe="")
 				try:
-					_log_api_request(docDHLSettings, "DHL Check Return Order Request", "POST", strURL, dctHeaders, dctPayload)
-					objResponse = requests.post(strURL, json=dctPayload, headers=dctHeaders, timeout=30)
-
-					if docDHLSettings.enable_detailed_logs:
-						frappe.log_error("DHL Check Return Order Response", frappe.as_json({
-							"status_code": objResponse.status_code,
-							"headers": dict(objResponse.headers),
-							"body": objResponse.text,
-						}))
+					_log_api_request(docDHLSettings, "DHL Manual Return Status Check", "GET", strStatusURL, dctHeaders)
+					objResponse = requests.get(strStatusURL, headers=dctHeaders, timeout=30)
 
 					if objResponse.status_code == 200:
-						lstData = objResponse.json()
-						if isinstance(lstData, list) and len(lstData) > 0:
-							dctFirst = lstData[0]
-							strEventStatus = dctFirst.get("eventStatus", "")
-							strNewStatus = None
-							if "Yapılmadı" in strEventStatus:
-								strNewStatus = "Order Created"
-							elif "Alındı" in strEventStatus or "Transit" in strEventStatus.lower():
-								strNewStatus = "In Transit"
-							elif "Teslim" in strEventStatus and "Edildi" in strEventStatus:
-								strNewStatus = "Delivered"
-							dctUpdate = {
-								"dhl_last_tracked": frappe.utils.now_datetime(),
-							}
-							if strNewStatus:
-								dctUpdate["status"] = strNewStatus
-							frappe.db.set_value("DHL Return Order", strDHLReturnOrderName, dctUpdate)
-							dctResult.op_result = True
-							dctResult.op_message = strEventStatus
+						dctData = objResponse.json()
+						if isinstance(dctData, list) and len(dctData) > 0:
+							dctData = dctData[0]
+						dStatusCode = dctData.get("shipmentStatusCode") if isinstance(dctData, dict) else None
+						strInfoMessage = dctData.get("shipmentStatus", "") if isinstance(dctData, dict) else ""
+						strNewStatus = RETURN_DHL_STATUS_MAP.get(dStatusCode, "")
+					elif objResponse.status_code == 401:
+						dctRefreshResult = get_token(blnForce=True)
+						if dctRefreshResult.op_result:
+							dctHeaders["Authorization"] = "Bearer " + dctRefreshResult.token
+							objResponse2 = requests.get(strStatusURL, headers=dctHeaders, timeout=30)
+							if objResponse2.status_code == 200:
+								dctData = objResponse2.json()
+								if isinstance(dctData, list) and len(dctData) > 0:
+									dctData = dctData[0]
+								dStatusCode = dctData.get("shipmentStatusCode") if isinstance(dctData, dict) else None
+								strInfoMessage = dctData.get("shipmentStatus", "") if isinstance(dctData, dict) else ""
+								strNewStatus = RETURN_DHL_STATUS_MAP.get(dStatusCode, "")
 						else:
-							dctResult.op_message = "No data returned from checkReturnOrder"
+							dctResult.op_message = "Token refresh failed: " + dctRefreshResult.op_message
+					elif objResponse.status_code == 404:
+						strNewStatus, strInfoMessage = _check_return_order_fallback(
+							strReferenceId, strBaseURL, dctHeaders, docDHLSettings
+						)
+						if strNewStatus is None:
+							dctResult.op_message = strInfoMessage
 					else:
 						dctResult.op_message = "HTTP {0}: {1}".format(objResponse.status_code, objResponse.text[:500])
-						frappe.log_error("DHL Check Return Order Error", dctResult.op_message)
+						frappe.log_error("DHL Manual Return Status Error", dctResult.op_message)
 				except Exception:
-					dctResult.op_message = "Exception during checkReturnOrder: " + frappe.get_traceback()
-					frappe.log_error("DHL Check Return Order Exception", dctResult.op_message)
+					dctResult.op_message = "Exception during return status check: " + frappe.get_traceback()
+					frappe.log_error("DHL Manual Return Status Exception", dctResult.op_message)
+
+				if strNewStatus:
+					frappe.db.set_value(
+						"DHL Return Order",
+						strDHLReturnOrderName,
+						{
+							"status": strNewStatus,
+							"dhl_last_tracked": frappe.utils.now_datetime(),
+						},
+						update_modified=False,
+					)
+					dctResult.op_result = True
+					dctResult.op_message = strInfoMessage or strNewStatus
 
 	return dctResult
+
+
+def _check_return_order_fallback(strReferenceId, strBaseURL, dctHeaders, docDHLSettings):
+	"""Fallback to checkReturnOrder endpoint when getshipmentstatus returns 404.
+	Returns (status_string, info_message) on carrier success, (None, error_message) on error."""
+	strNewStatus = None
+	strInfoMessage = ""
+	strPayload = {
+		"referenceId": strReferenceId,
+		"shipmentId": None,
+		"invoiceSerialNumber": None,
+		"invoiceNumber": None,
+		"barcode": None,
+		"shipmentReleaseDate": None,
+	}
+	strURL = strBaseURL + "/mngapi/api/plusqueryapi/checkReturnOrder"
+	try:
+		_log_api_request(docDHLSettings, "DHL Check Return Order Fallback", "POST", strURL, dctHeaders, strPayload)
+		objResponse = requests.post(strURL, json=strPayload, headers=dctHeaders, timeout=30)
+		if objResponse.status_code == 200:
+			lstData = objResponse.json()
+			if isinstance(lstData, list) and len(lstData) > 0:
+				strNewStatus = "Order Created"
+				strInfoMessage = lstData[0].get("eventStatus", "") if isinstance(lstData[0], dict) else ""
+			else:
+				strNewStatus = "Not Found"
+		else:
+			strInfoMessage = "checkReturnOrder fallback HTTP {0}".format(objResponse.status_code)
+			frappe.log_error("DHL Check Return Order Fallback Error", strInfoMessage)
+	except Exception:
+		strInfoMessage = "checkReturnOrder fallback failed: " + frappe.get_traceback()
+		frappe.log_error("DHL Check Return Order Fallback Error", strInfoMessage)
+	return strNewStatus, strInfoMessage
 
 
 def validate_address(doc, method):

@@ -7,7 +7,7 @@ import requests
 from urllib.parse import quote
 from frappe.utils import add_to_date, now_datetime
 
-from dhl_ecommerce_integration.utils import get_token, _log_api_request
+from dhl_ecommerce_integration.utils import get_token, _log_api_request, RETURN_DHL_STATUS_MAP
 
 DHL_STATUS_MAP = {
 	1: "Pending",
@@ -268,18 +268,7 @@ def _log_skip_error(strReferenceId, strMessage):
 	)
 
 
-RETURN_DHL_STATUS_MAP = {
-	1: "Order Created",
-	2: "In Transit",
-	3: "In Transit",
-	4: "In Transit",
-	5: "Delivered",
-	6: "Cancelled",
-	7: "In Transit",
-	8: "In Transit",
-}
-
-RETURN_TERMINAL_STATUSES = ["Delivered", "Cancelled", "Not Found"]
+RETURN_TERMINAL_STATUSES = ["Delivered", "Delivery Failed", "Support Needed", "Cancelled", "Not Found"]
 
 
 def dhl_hourly_return_tracking():
@@ -324,7 +313,7 @@ def _get_active_return_orders():
 		filters=[
 			["reference_id", "is", "set"],
 			["reference_id", "!=", ""],
-			["status", "in", ["Order Created", "In Transit"]],
+			["status", "in", ["Pending", "Order Created", "In Transit"]],
 		],
 		fields=["name", "reference_id", "status", "dhl_last_tracked"],
 		limit_page_length=MAX_TRACKING_BATCH_SIZE,
@@ -389,7 +378,8 @@ def _track_single_return(dctReturn, dctHeaders, docSettings):
 
 
 def _resolve_return_order_status(strReferenceId, strBaseURL, dctHeaders, docSettings):
-	"""Fallback to checkReturnOrder endpoint when getshipmentstatus returns 404."""
+	"""Fallback to checkReturnOrder endpoint when getshipmentstatus returns 404.
+	Returns 'Order Created' or 'Not Found' on carrier success, None on error."""
 	strURL = strBaseURL + "/mngapi/api/plusqueryapi/checkReturnOrder"
 	dctPayload = {
 		"referenceId": strReferenceId,
@@ -399,17 +389,21 @@ def _resolve_return_order_status(strReferenceId, strBaseURL, dctHeaders, docSett
 		"barcode": None,
 		"shipmentReleaseDate": None,
 	}
+	strResolvedStatus = None
 	try:
 		_log_api_request(docSettings, "DHL Check Return Order Fallback", "POST", strURL, dctHeaders, dctPayload)
 		objResponse = requests.post(strURL, json=dctPayload, headers=dctHeaders, timeout=30)
 		if objResponse.status_code == 200:
 			lstData = objResponse.json()
 			if isinstance(lstData, list) and len(lstData) > 0:
-				return "Order Created"
-		return "Not Found"
+				strResolvedStatus = "Order Created"
+			else:
+				strResolvedStatus = "Not Found"
+		else:
+			_log_skip_error(strReferenceId, "checkReturnOrder fallback HTTP {0}".format(objResponse.status_code))
 	except Exception:
 		_log_skip_error(strReferenceId, "checkReturnOrder fallback failed: " + frappe.get_traceback())
-		return "Not Found"
+	return strResolvedStatus
 
 
 def _update_return_status(strDHLReturnOrderName, strNewStatus, strOldStatus, strReferenceId):

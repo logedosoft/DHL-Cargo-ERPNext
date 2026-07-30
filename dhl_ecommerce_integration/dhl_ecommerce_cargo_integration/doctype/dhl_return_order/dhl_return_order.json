@@ -108,7 +108,7 @@
    "label": "Status",
    "reqd": 1,
    "default": "Pending",
-   "options": "\nPending\nOrder Created\nIn Transit\nDelivered\nCancelled",
+   "options": "\nPending\nOrder Created\nIn Transit\nDelivered\nDelivery Failed\nSupport Needed\nCancelled\nNot Found",
    "in_list_view": 1,
    "in_standard_filter": 1
   },
