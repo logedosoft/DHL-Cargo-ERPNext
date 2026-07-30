@@ -79,6 +79,7 @@ def get_custom_fields():
                 "fieldtype": "Table",
                 "label": "DHL Barcodes",
                 "options": "DHL Barcode",
+                "allow_on_submit": 1,
                 "insert_after": "dhl_shipment_id",
             },
             {

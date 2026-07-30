@@ -174,7 +174,8 @@ scheduler_events = {
 # 		"dhl_ecommerce_integration.tasks.daily"
 # 	],
 	"hourly": [
-		"dhl_ecommerce_integration.tasks.dhl_hourly_tracking"
+		"dhl_ecommerce_integration.tasks.dhl_hourly_tracking",
+		"dhl_ecommerce_integration.tasks.dhl_hourly_return_tracking",
 	],
 # 	"weekly": [
 # 		"dhl_ecommerce_integration.tasks.weekly"
