@@ -87,6 +87,7 @@ def get_token(blnForce=False):
 				dctResult.token = strExistingToken
 				return dctResult
 
+
 	strTokenURL = docDHLSettings.web_service_url + "/mngapi/api/token"
 
 	dctPayload = {
@@ -861,6 +862,212 @@ def cancel_dhl_order(strReferenceId):
 				docDN = frappe.get_doc("Delivery Note", strReferenceId)
 				strStatus = "Başarılı" if dctResult.op_result else "Başarısız"
 				docDN.add_comment("Comment", "DHL Kargo İptal — {0}: {1}".format(strStatus, dctResult.op_message))
+
+	return dctResult
+
+
+def _build_create_return_order_payload(strReferenceId, docSO, docAddress, strItemCode, dReturnQty, docDHLSettings):
+	docAddress.city = uppercase_tr(docAddress.city)
+	docAddress.county = uppercase_tr(docAddress.county)
+
+	strCityCode = "0"
+	for row in docDHLSettings.cities:
+		if row.city_name and row.city_name == docAddress.city:
+			strCityCode = row.code
+			break
+
+	strDistrictCode = "0"
+	for row in docDHLSettings.districts:
+		if row.city_code == strCityCode and row.district_name and row.district_name == docAddress.county:
+			strDistrictCode = row.code
+			break
+
+	strItemName = strItemCode
+	for docItem in docSO.items:
+		if docItem.item_code == strItemCode:
+			strItemName = docItem.item_name or strItemCode
+			break
+
+	strMobile = docAddress.phone or docDHLSettings.default_phone or ""
+	strEmail = docAddress.email_id or docDHLSettings.default_email or ""
+	intCustomerId = int(docDHLSettings.customer_number or 0)
+
+	dctPayload = {
+		"order": {
+			"referenceId": strReferenceId,
+			"barcode": strReferenceId,
+			"billOfLandingId": "",
+			"isCOD": 0,
+			"codAmount": 0,
+			"shipmentServiceType": 1,
+			"packagingType": 3,
+			"content": strItemName[:200],
+			"smsPreference1": 0,
+			"smsPreference2": 0,
+			"smsPreference3": 0,
+			"paymentType": 1,
+			"deliveryType": 1,
+			"description": "ERPNext Return Order",
+			"marketPlaceShortCode": "",
+			"marketPlaceSaleCode": "",
+		},
+		"orderPieceList": [
+			{
+				"barcode": strReferenceId,
+				"desi": 1,
+				"kg": 1,
+				"content": strItemName[:150],
+			}
+		],
+		"shipper": {
+			"customerId": intCustomerId,
+			"refCustomerId": "",
+			"cityCode": int(strCityCode),
+			"districtCode": int(strDistrictCode),
+			"cityName": docAddress.city or "",
+			"districtName": docAddress.county or "",
+			"address": _format_address_helper(docAddress),
+			"fullName": docSO.customer_name or "",
+			"mobilePhoneNumber": strMobile,
+			"bussinessPhoneNumber": "",
+			"homePhoneNumber": "",
+			"email": strEmail,
+			"taxOffice": "",
+			"taxNumber": "",
+		},
+	}
+
+	return dctPayload
+
+
+def _format_address_helper(docAddress):
+	lstParts = []
+	if docAddress.address_line1:
+		lstParts.append(docAddress.address_line1)
+	if docAddress.address_line2:
+		lstParts.append(docAddress.address_line2)
+	return " ".join(lstParts).strip()
+
+
+def _send_create_return_order(dctPayload, dctHeaders, strURL, docDHLSettings):
+	dctResult = frappe._dict({
+		"op_result": False,
+		"op_message": "",
+		"reference_id": "",
+		"order_invoice_id": "",
+		"return_label_url": "",
+	})
+
+	try:
+		_log_api_request(docDHLSettings, "DHL Create Return Order Request", "POST", strURL, dctHeaders, dctPayload)
+		objResponse = requests.post(strURL, json=dctPayload, headers=dctHeaders, timeout=30)
+
+		if docDHLSettings.enable_detailed_logs:
+			frappe.log_error("DHL Create Return Order Response", frappe.as_json({
+				"status_code": objResponse.status_code,
+				"headers": dict(objResponse.headers),
+				"body": objResponse.text,
+			}))
+
+		dctResult.status_code = objResponse.status_code
+
+		if objResponse.status_code == 200:
+			lstData = objResponse.json()
+			if isinstance(lstData, list) and len(lstData) > 0:
+				dctFirst = lstData[0]
+				dctResult.op_result = True
+				dctResult.op_message = "CreateReturnOrder succeeded"
+				dctResult.reference_id = dctFirst.get("referenceId", "")
+				dctResult.order_invoice_id = str(dctFirst.get("orderInvoiceId", ""))
+				dctResult.return_label_url = dctFirst.get("returnOrderLabelURL", "")
+			else:
+				dctResult.op_message = "Unexpected response format: " + str(lstData)[:500]
+				frappe.log_error("DHL Create Return Order Error", dctResult.op_message)
+		else:
+			dctResult.op_message = "HTTP {0}: {1}".format(objResponse.status_code, objResponse.text[:500])
+			frappe.log_error("DHL Create Return Order Error", dctResult.op_message)
+	except Exception:
+		dctResult.status_code = 0
+		dctResult.op_message = "Exception during createReturnOrder: " + frappe.get_traceback()
+		frappe.log_error("DHL Create Return Order Exception", dctResult.op_message)
+
+	return dctResult
+
+
+@frappe.whitelist()
+def check_return_status(strDHLReturnOrderName):
+	dctResult = frappe._dict({
+		"op_result": False,
+		"op_message": "",
+	})
+
+	docReturn = frappe.get_doc("DHL Return Order", strDHLReturnOrderName)
+	if not docReturn.reference_id:
+		dctResult.op_message = "No reference ID found"
+	else:
+		docDHLSettings = frappe.get_single("DHL Cargo Settings")
+		if not docDHLSettings.enabled:
+			dctResult.op_message = "DHL Cargo Settings is not enabled"
+		else:
+			dctTokenResult = get_token()
+			if not dctTokenResult.op_result:
+				dctResult.op_message = "Get Token failed: " + dctTokenResult.op_message
+			else:
+				dctHeaders = {
+					"x-ibm-client-id": docDHLSettings.client_id,
+					"x-ibm-client-secret": docDHLSettings.get_password("client_secret"),
+					"Content-Type": "application/json",
+					"Authorization": "Bearer " + dctTokenResult.token,
+				}
+				dctPayload = {
+					"referenceId": docReturn.reference_id,
+					"shipmentId": None,
+					"invoiceSerialNumber": None,
+					"invoiceNumber": None,
+					"barcode": None,
+					"shipmentReleaseDate": None,
+				}
+				strURL = docDHLSettings.web_service_url + "/mngapi/api/plusqueryapi/checkReturnOrder"
+
+				try:
+					_log_api_request(docDHLSettings, "DHL Check Return Order Request", "POST", strURL, dctHeaders, dctPayload)
+					objResponse = requests.post(strURL, json=dctPayload, headers=dctHeaders, timeout=30)
+
+					if docDHLSettings.enable_detailed_logs:
+						frappe.log_error("DHL Check Return Order Response", frappe.as_json({
+							"status_code": objResponse.status_code,
+							"headers": dict(objResponse.headers),
+							"body": objResponse.text,
+						}))
+
+					if objResponse.status_code == 200:
+						lstData = objResponse.json()
+						if isinstance(lstData, list) and len(lstData) > 0:
+							dctFirst = lstData[0]
+							strEventStatus = dctFirst.get("eventStatus", "")
+							strNewStatus = None
+							if "Yapılmadı" in strEventStatus:
+								strNewStatus = "Order Created"
+							elif "Alındı" in strEventStatus or "Transit" in strEventStatus.lower():
+								strNewStatus = "In Transit"
+							elif "Teslim" in strEventStatus and "Edildi" in strEventStatus:
+								strNewStatus = "Delivered"
+							dctUpdate = {
+								"dhl_last_tracked": frappe.utils.now_datetime(),
+							}
+							if strNewStatus:
+								dctUpdate["status"] = strNewStatus
+							frappe.db.set_value("DHL Return Order", strDHLReturnOrderName, dctUpdate)
+							dctResult.op_result = True
+							dctResult.op_message = strEventStatus
+						else:
+							dctResult.op_message = "No data returned from checkReturnOrder"
+					else:
+						dctResult.op_message = "HTTP {0}: {1}".format(objResponse.status_code, objResponse.text[:500])
+						frappe.log_error("DHL Check Return Order Error", dctResult.op_message)
+				except Exception:
+					dctResult.op_message = "Exception during checkReturnOrder: " + frappe.get_traceback()
+					frappe.log_error("DHL Check Return Order Exception", dctResult.op_message)
 
 	return dctResult
 

@@ -1,0 +1,210 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:RET-{YYYY}{MM}{DD}-{#####}",
+ "creation": "2026-07-22 20:48:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "sb_order_info_section",
+  "sales_order",
+  "customer",
+  "item_code",
+  "return_qty",
+  "reference_id",
+  "barcode",
+  "column_break_order",
+  "invoice_id",
+  "return_label_url",
+  "status",
+  "sb_shipper_section",
+  "shipper_name",
+  "shipper_phone",
+  "shipper_email",
+  "column_break_shipper",
+  "shipper_city",
+  "shipper_district",
+  "shipper_address",
+  "sb_dhl_section",
+  "dhl_error_log",
+  "dhl_last_tracked"
+ ],
+ "fields": [
+  {
+   "fieldname": "sb_order_info_section",
+   "fieldtype": "Section Break",
+   "label": "Order Info"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "Sales Order",
+   "options": "Sales Order",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Item Code",
+   "options": "Item",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "return_qty",
+   "fieldtype": "Int",
+   "label": "Return Qty",
+   "reqd": 1,
+   "non_negative": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "reference_id",
+   "fieldtype": "Data",
+   "label": "Reference ID",
+   "reqd": 0,
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "barcode",
+   "fieldtype": "Data",
+   "label": "Barcode",
+   "reqd": 0,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "column_break_order",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "invoice_id",
+   "fieldtype": "Data",
+   "label": "Invoice ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "return_label_url",
+   "fieldtype": "Data",
+   "label": "Return Label URL",
+   "read_only": 1,
+   "options": "URL"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "reqd": 1,
+   "default": "Pending",
+   "options": "\nPending\nOrder Created\nIn Transit\nDelivered\nCancelled",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "sb_shipper_section",
+   "fieldtype": "Section Break",
+   "label": "Shipper Info"
+  },
+  {
+   "fieldname": "shipper_name",
+   "fieldtype": "Data",
+   "label": "Shipper Name"
+  },
+  {
+   "fieldname": "shipper_phone",
+   "fieldtype": "Data",
+   "label": "Shipper Phone"
+  },
+  {
+   "fieldname": "shipper_email",
+   "fieldtype": "Data",
+   "label": "Shipper Email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "column_break_shipper",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "shipper_city",
+   "fieldtype": "Data",
+   "label": "Shipper City"
+  },
+  {
+   "fieldname": "shipper_district",
+   "fieldtype": "Data",
+   "label": "Shipper District"
+  },
+  {
+   "fieldname": "shipper_address",
+   "fieldtype": "Text",
+   "label": "Shipper Address"
+  },
+  {
+   "fieldname": "sb_dhl_section",
+   "fieldtype": "Section Break",
+   "label": "DHL Info"
+  },
+  {
+   "fieldname": "dhl_error_log",
+   "fieldtype": "Code",
+   "label": "DHL Error Log",
+   "read_only": 1,
+   "options": "Python"
+  },
+  {
+   "fieldname": "dhl_last_tracked",
+   "fieldtype": "Datetime",
+   "label": "DHL Last Tracked",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "module": "DHL eCommerce Cargo Integration",
+ "name": "DHL Return Order",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "All",
+   "share": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "search_fields": "reference_id,barcode,shipper_name,customer",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "shipper_name",
+ "track_changes": 1
+}

@@ -268,6 +268,172 @@ def _log_skip_error(strReferenceId, strMessage):
 	)
 
 
+RETURN_DHL_STATUS_MAP = {
+	1: "Order Created",
+	2: "In Transit",
+	3: "In Transit",
+	4: "In Transit",
+	5: "Delivered",
+	6: "Cancelled",
+	7: "In Transit",
+	8: "In Transit",
+}
+
+RETURN_TERMINAL_STATUSES = ["Delivered", "Cancelled", "Not Found"]
+
+
+def dhl_hourly_return_tracking():
+	dctResult = frappe._dict({"op_result": True, "op_message": "", "processed": 0, "failed": 0})
+
+	docSettings = frappe.get_single("DHL Cargo Settings")
+	if not docSettings.enabled:
+		dctResult.op_message = "DHL Cargo Settings is not enabled"
+	elif not docSettings.web_service_url:
+		dctResult.op_result = False
+		dctResult.op_message = "DHL Cargo Settings web service URL is not configured"
+		frappe.log_error("DHL Hourly Return Tracking", dctResult.op_message)
+	else:
+		dctTokenResult = get_token()
+		if not dctTokenResult.op_result:
+			dctResult.op_result = False
+			dctResult.op_message = "Failed to obtain DHL token: " + dctTokenResult.op_message
+			frappe.log_error("DHL Hourly Return Tracking", dctResult.op_message)
+		else:
+			dctHeaders = _build_headers(docSettings, dctTokenResult.token)
+			lstReturns = _get_active_return_orders()
+
+			for dctReturn in lstReturns:
+				try:
+					_track_single_return(dctReturn, dctHeaders, docSettings)
+					dctResult.processed += 1
+				except Exception:
+					dctResult.failed += 1
+					frappe.log_error(
+						"DHL Hourly Return Tracking Exception",
+						"ReferenceId: {0} | {1}".format(dctReturn.get("reference_id") or "", frappe.get_traceback())
+					)
+
+	return dctResult
+
+
+def _get_active_return_orders():
+	dtOneHourAgo = add_to_date(now_datetime(), hours=-1)
+
+	lstRows = frappe.get_all(
+		"DHL Return Order",
+		filters=[
+			["reference_id", "is", "set"],
+			["reference_id", "!=", ""],
+			["status", "in", ["Order Created", "In Transit"]],
+		],
+		fields=["name", "reference_id", "status", "dhl_last_tracked"],
+		limit_page_length=MAX_TRACKING_BATCH_SIZE,
+	)
+
+	lstActive = []
+	for dctRow in lstRows:
+		dtLastTracked = dctRow.get("dhl_last_tracked")
+		if dtLastTracked and dtLastTracked >= dtOneHourAgo:
+			continue
+		lstActive.append(dctRow)
+
+	return lstActive
+
+
+def _track_single_return(dctReturn, dctHeaders, docSettings):
+	strReferenceId = dctReturn.get("reference_id") or ""
+	strOldStatus = dctReturn.get("status") or ""
+	strNewStatus = ""
+	strErrorMessage = ""
+
+	if not _is_valid_reference_id(strReferenceId):
+		strErrorMessage = "Invalid referenceId format"
+	else:
+		strBaseURL = docSettings.web_service_url
+		strURL = strBaseURL + "/mngapi/api/standardqueryapi/getshipmentstatus/" + quote(strReferenceId, safe="")
+		dctResponse = _dhl_get_with_retry(strURL, dctHeaders, docSettings, "DHL Get Return Shipment Status")
+
+		if dctResponse.status_code == 200:
+			dctData = dctResponse.body
+			if isinstance(dctData, list) and len(dctData) > 0:
+				dctData = dctData[0]
+			dStatusCode = dctData.get("shipmentStatusCode") if isinstance(dctData, dict) else None
+			strNewStatus = RETURN_DHL_STATUS_MAP.get(dStatusCode, strOldStatus)
+		elif dctResponse.status_code == 401:
+			dctTokenResult = get_token(blnForce=True)
+			if dctTokenResult.op_result:
+				dctHeaders = _build_headers(docSettings, dctTokenResult.token)
+				dctResponse2 = _dhl_get_with_retry(
+					strURL, dctHeaders, docSettings, "DHL Get Return Shipment Status Retry"
+				)
+				if dctResponse2.status_code == 200:
+					dctData = dctResponse2.body
+					if isinstance(dctData, list) and len(dctData) > 0:
+						dctData = dctData[0]
+					dStatusCode = dctData.get("shipmentStatusCode") if isinstance(dctData, dict) else None
+					strNewStatus = RETURN_DHL_STATUS_MAP.get(dStatusCode, strOldStatus)
+				else:
+					strErrorMessage = dctResponse2.op_message
+			else:
+				strErrorMessage = "Token refresh failed: " + dctTokenResult.op_message
+		elif dctResponse.status_code == 404:
+			strNewStatus = _resolve_return_order_status(strReferenceId, strBaseURL, dctHeaders, docSettings)
+		else:
+			strErrorMessage = dctResponse.op_message
+
+	if strNewStatus:
+		_update_return_status(dctReturn["name"], strNewStatus, strOldStatus, strReferenceId)
+	elif strErrorMessage:
+		_log_skip_error(strReferenceId, strErrorMessage)
+
+
+
+def _resolve_return_order_status(strReferenceId, strBaseURL, dctHeaders, docSettings):
+	"""Fallback to checkReturnOrder endpoint when getshipmentstatus returns 404."""
+	strURL = strBaseURL + "/mngapi/api/plusqueryapi/checkReturnOrder"
+	dctPayload = {
+		"referenceId": strReferenceId,
+		"shipmentId": None,
+		"invoiceSerialNumber": None,
+		"invoiceNumber": None,
+		"barcode": None,
+		"shipmentReleaseDate": None,
+	}
+	try:
+		_log_api_request(docSettings, "DHL Check Return Order Fallback", "POST", strURL, dctHeaders, dctPayload)
+		objResponse = requests.post(strURL, json=dctPayload, headers=dctHeaders, timeout=30)
+		if objResponse.status_code == 200:
+			lstData = objResponse.json()
+			if isinstance(lstData, list) and len(lstData) > 0:
+				return "Order Created"
+		return "Not Found"
+	except Exception:
+		_log_skip_error(strReferenceId, "checkReturnOrder fallback failed: " + frappe.get_traceback())
+		return "Not Found"
+
+
+def _update_return_status(strDHLReturnOrderName, strNewStatus, strOldStatus, strReferenceId):
+	frappe.db.set_value(
+		"DHL Return Order",
+		strDHLReturnOrderName,
+		{
+			"status": strNewStatus,
+			"dhl_last_tracked": now_datetime(),
+		},
+		update_modified=False,
+	)
+
+	if strNewStatus != strOldStatus:
+		frappe.get_doc({
+			"doctype": "Comment",
+			"comment_type": "Info",
+			"reference_doctype": "DHL Return Order",
+			"reference_name": strDHLReturnOrderName,
+			"content": "DHL status updated: {0} (ref: {1})".format(strNewStatus, strReferenceId),
+			"comment_email": frappe.session.user or "Administrator",
+		}).insert(ignore_permissions=True)
+
+
 def _log_api_response(docSettings, strTitle, objResponse):
 	if docSettings.enable_detailed_logs:
 		try:
