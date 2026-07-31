@@ -1087,17 +1087,15 @@ def check_return_status(strDHLReturnOrderName):
 					frappe.log_error("DHL Manual Return Status Exception", dctResult.op_message)
 
 				if strNewStatus:
-					frappe.db.set_value(
-						"DHL Return Order",
-						strDHLReturnOrderName,
-						{
-							"status": strNewStatus,
-							"dhl_last_tracked": frappe.utils.now_datetime(),
-						},
-						update_modified=False,
-					)
-					dctResult.op_result = True
-					dctResult.op_message = strInfoMessage or strNewStatus
+					try:
+						docReturn.status = strNewStatus
+						docReturn.dhl_last_tracked = frappe.utils.now_datetime()
+						docReturn.save()
+						dctResult.op_result = True
+						dctResult.op_message = strInfoMessage or strNewStatus
+					except Exception:
+						dctResult.op_message = "Failed to save return status: " + frappe.get_traceback()
+						frappe.log_error("DHL Manual Return Status Save Error", dctResult.op_message)
 
 	return dctResult
 

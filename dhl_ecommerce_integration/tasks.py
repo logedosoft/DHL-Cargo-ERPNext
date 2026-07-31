@@ -407,15 +407,19 @@ def _resolve_return_order_status(strReferenceId, strBaseURL, dctHeaders, docSett
 
 
 def _update_return_status(strDHLReturnOrderName, strNewStatus, strOldStatus, strReferenceId):
-	frappe.db.set_value(
-		"DHL Return Order",
-		strDHLReturnOrderName,
-		{
-			"status": strNewStatus,
-			"dhl_last_tracked": now_datetime(),
-		},
-		update_modified=False,
-	)
+	try:
+		docReturn = frappe.get_doc("DHL Return Order", strDHLReturnOrderName)
+		docReturn.status = strNewStatus
+		docReturn.dhl_last_tracked = now_datetime()
+		docReturn.save(ignore_permissions=True)
+	except Exception:
+		frappe.log_error(
+			"DHL Return Order Save Failed",
+			"Return Order: {0} | Status: {1} | {2}".format(
+				strDHLReturnOrderName, strNewStatus, frappe.get_traceback()
+			)
+		)
+		return
 
 	if strNewStatus != strOldStatus:
 		frappe.get_doc({
