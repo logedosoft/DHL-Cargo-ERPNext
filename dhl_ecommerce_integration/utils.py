@@ -720,6 +720,41 @@ def _send_create_order(dctPayload, dctHeaders, strURL, docDHLSettings):
 	return dctResult
 
 
+def _flatten_barcode_elements(lstData):
+	dctResult = frappe._dict({"op_result": False, "op_message": "", "invoice_id": None, "shipment_id": None, "barcodes": []})
+
+	if not isinstance(lstData, list) or len(lstData) == 0:
+		dctResult.op_message = "Unexpected response format: " + str(lstData)[:500]
+		return dctResult
+
+	strBaseRef = None
+	lstFlatBarcodes = []
+
+	for dctElement in lstData:
+		if strBaseRef is None:
+			strBaseRef = dctElement.get("referenceId")
+			dctResult.invoice_id = dctElement.get("invoiceId")
+			dctResult.shipment_id = dctElement.get("shipmentId")
+		elif dctElement.get("referenceId") and dctElement.get("referenceId") != strBaseRef:
+			frappe.log_error("DHL CreateBarcode Warning", "Non-uniform referenceId in response element: {0} vs base {1}".format(
+				dctElement.get("referenceId"), strBaseRef
+			))
+
+		lstPieceBarcodes = dctElement.get("barcodes", [])
+		for dctBarcode in lstPieceBarcodes:
+			lstFlatBarcodes.append(dctBarcode)
+
+	if len(lstFlatBarcodes) == 0:
+		dctResult.op_message = "CreateBarcode returned no piece barcodes"
+		frappe.log_error("DHL CreateBarcode Error", dctResult.op_message)
+	else:
+		dctResult.op_result = True
+		dctResult.op_message = "CreateBarcode succeeded"
+		dctResult.barcodes = lstFlatBarcodes
+
+	return dctResult
+
+
 def _send_create_barcode(dctPayload, dctHeaders, strURL, docDHLSettings):
 	dctResult = frappe._dict({"op_result": False, "op_message": ""})
 
@@ -738,16 +773,8 @@ def _send_create_barcode(dctPayload, dctHeaders, strURL, docDHLSettings):
 
 		if objResponse.status_code == 200:
 			lstData = objResponse.json()
-			if isinstance(lstData, list) and len(lstData) > 0:
-				dctFirst = lstData[0]
-				dctResult.op_result = True
-				dctResult.op_message = "CreateBarcode succeeded"
-				dctResult.invoice_id = dctFirst.get("invoiceId")
-				dctResult.shipment_id = dctFirst.get("shipmentId")
-				dctResult.barcodes = dctFirst.get("barcodes", [])
-			else:
-				dctResult.op_message = "Unexpected response format: " + str(lstData)[:500]
-				frappe.log_error("DHL CreateBarcode Error", dctResult.op_message)
+			dctResult = _flatten_barcode_elements(lstData)
+			dctResult.status_code = 200
 		else:
 			dctResult.op_message = "HTTP {0}: {1}".format(objResponse.status_code, objResponse.text[:500])
 			frappe.log_error("DHL CreateBarcode Error", dctResult.op_message)
@@ -760,7 +787,7 @@ def _send_create_barcode(dctPayload, dctHeaders, strURL, docDHLSettings):
 
 
 def _convert_zpl_to_pdf(lstZpl):
-	strLabelaryURL = "http://api.labelary.com/v1/printers/8dpmm/labels/4x4/0/"
+	strLabelaryURL = "https://api.labelary.com/v1/printers/8dpmm/labels/4x4/0/"
 	dctHeaders = {"accept": "application/pdf", "content-type": "application/x-www-form-urlencoded"}
 	strCombinedZpl = "\n".join(lstZpl)
 	bytPdf = None
