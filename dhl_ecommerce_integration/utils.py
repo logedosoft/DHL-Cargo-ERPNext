@@ -529,24 +529,10 @@ def create_barcode(strDeliveryNoteName, lstParcels):
 							"dhl_barcode_invoice_id": dctBCResult.invoice_id or "",
 							"dhl_shipment_id": dctBCResult.shipment_id or "",
 						})
-						for dctBarcode in (dctBCResult.barcodes or []):
-							dPieceIdx = dctBarcode.get("pieceNumber", 1) - 1
-							dPieceNumber = dPieceIdx + 1
-							dctParcel = lstParcels[dPieceIdx] if dPieceIdx < len(lstParcels) else {}
-							docBarcode = frappe.get_doc({
-								"doctype": "DHL Barcode",
-								"parent": strDeliveryNoteName,
-								"parenttype": "Delivery Note",
-								"parentfield": "dhl_barcodes",
-								"piece_number": dctBarcode.get("pieceNumber", 0),
-								"barcode_zpl": dctBarcode.get("value", ""),
-								"barcode": _make_piece_barcode(strReferenceId, dPieceNumber, len(lstParcels)),
-								"desi": dctParcel.get("desi", 0),
-								"kg": dctParcel.get("kg", 0),
-							})
-							docBarcode.insert(ignore_permissions=True)
-						docDN.add_comment("Comment", "DHL CreateBarcode succeeded. InvoiceId: {0}, ShipmentId: {1}".format(
-							dctBCResult.invoice_id or "", dctBCResult.shipment_id or ""
+						dctSyncResult = _sync_barcode_rows(docDN.dhl_barcodes, dctBCResult.barcodes, lstParcels, strDeliveryNoteName)
+						docDN.save(ignore_permissions=True)
+						docDN.add_comment("Comment", "DHL CreateBarcode succeeded. InvoiceId: {0}, ShipmentId: {1}, Pieces: {2}".format(
+							dctBCResult.invoice_id or "", dctBCResult.shipment_id or "", dctSyncResult.synced_count
 						))
 						dctPDFResult = _generate_pdfs_for_dn(strDeliveryNoteName)
 						if dctPDFResult.op_result:
@@ -558,6 +544,46 @@ def create_barcode(strDeliveryNoteName, lstParcels):
 						dctResult.op_result = False
 						dctResult.op_message = "CreateBarcode failed: " + dctBCResult.op_message
 						docDN.add_comment("Comment", "DHL CreateBarcode failed: " + dctBCResult.op_message)
+
+	return dctResult
+
+
+def _sync_barcode_rows(lstRows, lstBarcodes, lstParcels, strDocName):
+	dctResult = frappe._dict({"op_result": False, "op_message": "", "synced_count": 0})
+	dTotalPieces = len(lstParcels)
+	dSyncedCount = 0
+
+	for dctEntry in (lstBarcodes or []):
+		dPiece = int(dctEntry.get("pieceNumber", 0))
+		dIdx = dPiece - 1
+		dctParcel = lstParcels[dIdx] if dIdx < len(lstParcels) else {}
+		strPieceBarcode = _make_piece_barcode(strDocName, dPiece, dTotalPieces)
+		dctRowData = {
+			"reference_id": strDocName,
+			"barcode": strPieceBarcode,
+			"zpl": dctEntry.get("value", ""),
+			"piece_number": dPiece,
+			"desi": dctParcel.get("desi", 0),
+			"kg": dctParcel.get("kg", 0),
+			"attachment": "APPENDED",
+		}
+		if dIdx < len(lstRows):
+			lstRows[dIdx].update(dctRowData)
+		else:
+			lstRows.append(frappe._dict(dctRowData))
+		dSyncedCount += 1
+
+	if len(lstRows) > len(lstBarcodes):
+		dExcess = len(lstRows) - len(lstBarcodes)
+		frappe.log_error("DHL Barcode Sync Warning", "Removed {0} excess barcode rows from {1}".format(dExcess, strDocName))
+		del lstRows[len(lstBarcodes):]
+
+	dctResult.synced_count = dSyncedCount
+	if dSyncedCount == len(lstBarcodes or []):
+		dctResult.op_result = True
+		dctResult.op_message = "Barcode rows synced successfully"
+	else:
+		dctResult.op_message = "Expected {0} barcodes, synced {1}".format(len(lstBarcodes or []), dSyncedCount)
 
 	return dctResult
 
