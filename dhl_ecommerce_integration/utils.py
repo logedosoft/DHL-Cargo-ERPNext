@@ -559,13 +559,11 @@ def _sync_barcode_rows(lstRows, lstBarcodes, lstParcels, strDocName):
 		dctParcel = lstParcels[dIdx] if dIdx < len(lstParcels) else {}
 		strPieceBarcode = _make_piece_barcode(strDocName, dPiece, dTotalPieces)
 		dctRowData = {
-			"reference_id": strDocName,
 			"barcode": strPieceBarcode,
-			"zpl": dctEntry.get("value", ""),
+			"barcode_zpl": dctEntry.get("value", ""),
 			"piece_number": dPiece,
 			"desi": dctParcel.get("desi", 0),
 			"kg": dctParcel.get("kg", 0),
-			"attachment": "APPENDED",
 		}
 		if dIdx < len(lstRows):
 			lstRows[dIdx].update(dctRowData)
