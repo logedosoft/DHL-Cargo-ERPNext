@@ -27,12 +27,16 @@ def create_return_order(docname=None, sales_order_name=None, item_code=None, ret
 		"dhl_return_order_name": "",
 	})
 
+	if not frappe.has_permission("DHL Return Order", "create"):
+		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
+
 	docDHLSettings = frappe.get_single("DHL Cargo Settings")
 	if not docDHLSettings.enabled:
 		dctResult.op_message = "DHL Cargo Settings is not enabled"
 		frappe.log_error("DHL Create Return Order", dctResult.op_message)
 		return dctResult
 
+	docReturn = None
 	if docname:
 		docReturn = frappe.get_doc("DHL Return Order", docname)
 		docSO = frappe.get_doc("Sales Order", docReturn.sales_order)
@@ -44,34 +48,41 @@ def create_return_order(docname=None, sales_order_name=None, item_code=None, ret
 			return dctResult
 
 		dReturnQty = int(return_qty)
-		dctValidation = _validate_return_request(sales_order_name, item_code, dReturnQty)
-		if not dctValidation.op_result:
-			dctResult.op_message = dctValidation.op_message
-			return dctResult
-
 		docSO = frappe.get_doc("Sales Order", sales_order_name)
 		strItemCode = item_code
 
-		existing = frappe.db.get_value("DHL Return Order", {
-			"sales_order": sales_order_name,
-			"item_code": item_code,
-			"status": ["in", ["Pending", "Order Created", "In Transit"]],
-		}, "name")
-		if existing:
-			frappe.throw("A return order already exists: {0}".format(existing))
+	# --- shared validation ---
+	dctValidation = _validate_return_request(docSO.name, strItemCode, dReturnQty)
+	if not dctValidation.op_result:
+		dctResult.op_message = dctValidation.op_message
+		return dctResult
 
+	# --- active duplicate check (exclude self when re-triggering an existing record) ---
+	dctFilters = {
+		"sales_order": docSO.name,
+		"item_code": strItemCode,
+		"status": ["in", ["Pending", "Order Created", "In Transit"]],
+	}
+	if docReturn:
+		dctFilters["name"] = ["!=", docReturn.name]
+	existing = frappe.db.get_value("DHL Return Order", dctFilters, "name")
+	if existing:
+		frappe.throw("A return order already exists: {0}".format(existing))
+
+	# --- create doc only for new records ---
+	if not docReturn:
 		docReturn = frappe.get_doc({
 			"doctype": "DHL Return Order",
-			"sales_order": sales_order_name,
+			"sales_order": docSO.name,
 			"customer": docSO.customer,
-			"item_code": item_code,
+			"item_code": strItemCode,
 			"return_qty": dReturnQty,
 			"status": "Pending",
 			"shipper_name": docSO.customer_name or "",
 			"reference_id": "",
 			"barcode": "",
 		})
-		docReturn.insert(ignore_permissions=True)
+		docReturn.insert()
 
 	strCustomerNumber = docDHLSettings.customer_number or ""
 	if not strCustomerNumber:

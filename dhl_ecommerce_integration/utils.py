@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Logedosoft Business Solutions and contributors
 # For license information, please see license.txt
 
+import re
 import frappe, json, requests, base64, time
 from datetime import datetime, timedelta, timezone
 from frappe import msgprint, _
@@ -17,6 +18,13 @@ def uppercase_tr(s):
 
 	# 2. Apply translation, then standard upper() for the rest (a-z)
 	return s.translate(tr).upper()
+
+
+def normalize_phone(strRaw):
+	"""Strip every non-digit char and take the last 10 digits. Return whatever remains."""
+	strDigits = re.sub(r"\D", "", strRaw or "")
+	return strDigits[-10:]
+
 
 RETURN_DHL_STATUS_MAP = {
 	1: "Order Created",
@@ -356,7 +364,7 @@ def _send_create_recipient(doc, docDHLSettings, docAddress, strCityCode, strDist
 
 	strCreateURL = docDHLSettings.web_service_url + "/mngapi/api/pluscmdapi/createRecipient"
 
-	strMobile = docAddress.phone or docDHLSettings.default_phone or ""
+	strMobile = normalize_phone(docAddress.phone or docDHLSettings.default_phone or "")
 	strEmail = docAddress.email_id or docDHLSettings.default_email or ""
 	docCustomer = frappe.get_doc("Customer", doc.customer)
 
@@ -588,7 +596,7 @@ def _build_create_order_payload(docDN, lstParcels):
 	strFirstItemGroup = docDN.items[0].item_group if docDN.items else ""
 	strReferenceId = docDN.name
 
-	strMobile = docAddress.phone or docDHLSettings.default_phone or ""
+	strMobile = normalize_phone(docAddress.phone or docDHLSettings.default_phone or "")
 	strEmail = docAddress.email_id or docDHLSettings.default_email or ""
 	strAddress = (docAddress.address_line1 or "") + " " + (docAddress.address_line2 or "")
 
@@ -901,7 +909,7 @@ def _build_create_return_order_payload(strReferenceId, docSO, docAddress, strIte
 			strItemName = docItem.item_name or strItemCode
 			break
 
-	strMobile = docAddress.phone or docDHLSettings.default_phone or ""
+	strMobile = normalize_phone(docAddress.phone or docDHLSettings.default_phone or "")
 	strEmail = docAddress.email_id or docDHLSettings.default_email or ""
 
 	dctPayload = {
@@ -1012,6 +1020,9 @@ def check_return_status(strDHLReturnOrderName):
 		"op_result": False,
 		"op_message": "",
 	})
+
+	if not frappe.has_permission("DHL Return Order", "write"):
+		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
 
 	docReturn = frappe.get_doc("DHL Return Order", strDHLReturnOrderName)
 	if not docReturn.reference_id:
