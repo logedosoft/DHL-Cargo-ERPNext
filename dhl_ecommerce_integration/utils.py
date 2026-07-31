@@ -852,25 +852,72 @@ def _attach_pdf_to_dn(strDNName, bytPdf, strFileName):
 	return strFileURL
 
 
+def _delete_stale_label_files(strDNName):
+	dctResult = frappe._dict({"op_result": True, "op_message": "", "intDeleted": 0})
+	strFileNamePattern = "DHL_Etiketi_{0}_%".format(strDNName)
+	try:
+		lstFileNames = frappe.get_all(
+			"File",
+			filters={
+				"attached_to_doctype": "Delivery Note",
+				"attached_to_name": strDNName,
+				"file_name": ("like", strFileNamePattern),
+			},
+			pluck="name",
+		)
+	except Exception:
+		dctResult.op_result = False
+		dctResult.op_message = "Failed to query stale label files"
+		frappe.log_error("DHL Label Cleanup Query Error", frappe.get_traceback())
+		return dctResult
+
+	for strFileName in lstFileNames:
+		try:
+			frappe.delete_doc("File", strFileName, ignore_permissions=True)
+			dctResult.intDeleted += 1
+		except Exception:
+			dctResult.op_message += "Failed to delete {0}; ".format(strFileName)
+			frappe.log_error("DHL Label Cleanup Delete Error", "File: {0}\n{1}".format(strFileName, frappe.get_traceback()))
+
+	return dctResult
+
+
 def _generate_pdfs_for_dn(strDNName):
-	dctResult = frappe._dict({"op_result": True, "op_message": "", "lst_file_urls": []})
+	dctResult = frappe._dict({"op_result": True, "op_message": "", "lst_file_urls": [], "int_deleted": 0})
 	docDN = frappe.get_doc("Delivery Note", strDNName)
 	if not docDN.dhl_barcodes:
 		dctResult.op_result = False
 		dctResult.op_message = "No DHL barcodes found"
 	else:
+		lstConverted = []
 		for docBCRow in docDN.dhl_barcodes:
 			if not docBCRow.barcode_zpl:
 				continue
 			bytPdf = _convert_zpl_to_pdf([docBCRow.barcode_zpl])
-			if bytPdf:
-				strFileName = "DHL_Etiketi_{0}_Parca{1}.pdf".format(strDNName, docBCRow.piece_number)
-				strFileURL = _attach_pdf_to_dn(strDNName, bytPdf, strFileName)
-				if strFileURL:
-					dctResult.lst_file_urls.append(strFileURL)
+			if bytPdf is None:
+				dctResult.op_result = False
+				dctResult.op_message = "PDF conversion failed for piece {0}".format(docBCRow.piece_number)
+				return dctResult
+			lstConverted.append((docBCRow.piece_number, bytPdf))
+
+		if not lstConverted:
+			dctResult.op_result = False
+			dctResult.op_message = "PDF generation failed"
+			return dctResult
+
+		dctDeleteResult = _delete_stale_label_files(strDNName)
+		dctResult.int_deleted = dctDeleteResult.intDeleted
+
+		for dPieceNumber, bytPdf in lstConverted:
+			strFileName = "DHL_Etiketi_{0}_Parca{1}.pdf".format(strDNName, dPieceNumber)
+			strFileURL = _attach_pdf_to_dn(strDNName, bytPdf, strFileName)
+			if strFileURL:
+				dctResult.lst_file_urls.append(strFileURL)
+
 		if not dctResult.lst_file_urls:
 			dctResult.op_result = False
 			dctResult.op_message = "PDF generation failed"
+
 	return dctResult
 
 
