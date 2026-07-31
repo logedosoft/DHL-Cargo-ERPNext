@@ -530,7 +530,6 @@ def create_barcode(strDeliveryNoteName, lstParcels):
 							"dhl_shipment_id": dctBCResult.shipment_id or "",
 						})
 						dctSyncResult = _sync_barcode_rows(docDN.dhl_barcodes, dctBCResult.barcodes, lstParcels, strDeliveryNoteName)
-						docDN.save(ignore_permissions=True)
 						docDN.add_comment("Comment", "DHL CreateBarcode succeeded. InvoiceId: {0}, ShipmentId: {1}, Pieces: {2}".format(
 							dctBCResult.invoice_id or "", dctBCResult.shipment_id or "", dctSyncResult.synced_count
 						))
@@ -566,15 +565,23 @@ def _sync_barcode_rows(lstRows, lstBarcodes, lstParcels, strDocName):
 			"kg": dctParcel.get("kg", 0),
 		}
 		if dIdx < len(lstRows):
+			frappe.db.set_value("DHL Barcode", lstRows[dIdx].name, dctRowData)
 			lstRows[dIdx].update(dctRowData)
 		else:
-			lstRows.append(frappe._dict(dctRowData))
+			docNewRow = frappe.new_doc("DHL Barcode")
+			docNewRow.parent = strDocName
+			docNewRow.parenttype = "Delivery Note"
+			docNewRow.parentfield = "dhl_barcodes"
+			docNewRow.update(dctRowData)
+			docNewRow.db_insert()
+			lstRows.append(docNewRow)
 		dSyncedCount += 1
 
-	if len(lstRows) > len(lstBarcodes):
-		dExcess = len(lstRows) - len(lstBarcodes)
-		frappe.log_error("DHL Barcode Sync Warning", "Removed {0} excess barcode rows from {1}".format(dExcess, strDocName))
-		del lstRows[len(lstBarcodes):]
+	while len(lstRows) > len(lstBarcodes or []):
+		objExcess = lstRows.pop()
+		if hasattr(objExcess, "name") and objExcess.name:
+			frappe.db.delete("DHL Barcode", {"name": objExcess.name})
+		frappe.log_error("DHL Barcode Sync Warning", "Removed excess barcode row from {0}".format(strDocName))
 
 	dctResult.synced_count = dSyncedCount
 	if dSyncedCount == len(lstBarcodes or []):
