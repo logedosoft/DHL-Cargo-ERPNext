@@ -529,24 +529,9 @@ def create_barcode(strDeliveryNoteName, lstParcels):
 							"dhl_barcode_invoice_id": dctBCResult.invoice_id or "",
 							"dhl_shipment_id": dctBCResult.shipment_id or "",
 						})
-						for dctBarcode in (dctBCResult.barcodes or []):
-							dPieceIdx = dctBarcode.get("pieceNumber", 1) - 1
-							dPieceNumber = dPieceIdx + 1
-							dctParcel = lstParcels[dPieceIdx] if dPieceIdx < len(lstParcels) else {}
-							docBarcode = frappe.get_doc({
-								"doctype": "DHL Barcode",
-								"parent": strDeliveryNoteName,
-								"parenttype": "Delivery Note",
-								"parentfield": "dhl_barcodes",
-								"piece_number": dctBarcode.get("pieceNumber", 0),
-								"barcode_zpl": dctBarcode.get("value", ""),
-								"barcode": _make_piece_barcode(strReferenceId, dPieceNumber, len(lstParcels)),
-								"desi": dctParcel.get("desi", 0),
-								"kg": dctParcel.get("kg", 0),
-							})
-							docBarcode.insert(ignore_permissions=True)
-						docDN.add_comment("Comment", "DHL CreateBarcode succeeded. InvoiceId: {0}, ShipmentId: {1}".format(
-							dctBCResult.invoice_id or "", dctBCResult.shipment_id or ""
+						dctSyncResult = _sync_barcode_rows(docDN.dhl_barcodes, dctBCResult.barcodes, lstParcels, strDeliveryNoteName)
+						docDN.add_comment("Comment", "DHL CreateBarcode succeeded. InvoiceId: {0}, ShipmentId: {1}, Pieces: {2}".format(
+							dctBCResult.invoice_id or "", dctBCResult.shipment_id or "", dctSyncResult.synced_count
 						))
 						dctPDFResult = _generate_pdfs_for_dn(strDeliveryNoteName)
 						if dctPDFResult.op_result:
@@ -558,6 +543,52 @@ def create_barcode(strDeliveryNoteName, lstParcels):
 						dctResult.op_result = False
 						dctResult.op_message = "CreateBarcode failed: " + dctBCResult.op_message
 						docDN.add_comment("Comment", "DHL CreateBarcode failed: " + dctBCResult.op_message)
+
+	return dctResult
+
+
+def _sync_barcode_rows(lstRows, lstBarcodes, lstParcels, strDocName):
+	dctResult = frappe._dict({"op_result": False, "op_message": "", "synced_count": 0})
+	dTotalPieces = len(lstParcels)
+	dSyncedCount = 0
+
+	for dctEntry in (lstBarcodes or []):
+		dPiece = int(dctEntry.get("pieceNumber", 0))
+		dIdx = dPiece - 1
+		dctParcel = lstParcels[dIdx] if dIdx < len(lstParcels) else {}
+		strPieceBarcode = _make_piece_barcode(strDocName, dPiece, dTotalPieces)
+		dctRowData = {
+			"barcode": strPieceBarcode,
+			"barcode_zpl": dctEntry.get("value", ""),
+			"piece_number": dPiece,
+			"desi": dctParcel.get("desi", 0),
+			"kg": dctParcel.get("kg", 0),
+		}
+		if dIdx < len(lstRows):
+			frappe.db.set_value("DHL Barcode", lstRows[dIdx].name, dctRowData)
+			lstRows[dIdx].update(dctRowData)
+		else:
+			docNewRow = frappe.new_doc("DHL Barcode")
+			docNewRow.parent = strDocName
+			docNewRow.parenttype = "Delivery Note"
+			docNewRow.parentfield = "dhl_barcodes"
+			docNewRow.update(dctRowData)
+			docNewRow.db_insert()
+			lstRows.append(docNewRow)
+		dSyncedCount += 1
+
+	while len(lstRows) > len(lstBarcodes or []):
+		objExcess = lstRows.pop()
+		if hasattr(objExcess, "name") and objExcess.name:
+			frappe.db.delete("DHL Barcode", {"name": objExcess.name})
+		frappe.log_error("DHL Barcode Sync Warning", "Removed excess barcode row from {0}".format(strDocName))
+
+	dctResult.synced_count = dSyncedCount
+	if dSyncedCount == len(lstBarcodes or []):
+		dctResult.op_result = True
+		dctResult.op_message = "Barcode rows synced successfully"
+	else:
+		dctResult.op_message = "Expected {0} barcodes, synced {1}".format(len(lstBarcodes or []), dSyncedCount)
 
 	return dctResult
 
@@ -720,6 +751,41 @@ def _send_create_order(dctPayload, dctHeaders, strURL, docDHLSettings):
 	return dctResult
 
 
+def _flatten_barcode_elements(lstData):
+	dctResult = frappe._dict({"op_result": False, "op_message": "", "invoice_id": None, "shipment_id": None, "barcodes": []})
+
+	if not isinstance(lstData, list) or len(lstData) == 0:
+		dctResult.op_message = "Unexpected response format: " + str(lstData)[:500]
+		return dctResult
+
+	strBaseRef = None
+	lstFlatBarcodes = []
+
+	for dctElement in lstData:
+		if strBaseRef is None:
+			strBaseRef = dctElement.get("referenceId")
+			dctResult.invoice_id = dctElement.get("invoiceId")
+			dctResult.shipment_id = dctElement.get("shipmentId")
+		elif dctElement.get("referenceId") and dctElement.get("referenceId") != strBaseRef:
+			frappe.log_error("DHL CreateBarcode Warning", "Non-uniform referenceId in response element: {0} vs base {1}".format(
+				dctElement.get("referenceId"), strBaseRef
+			))
+
+		lstPieceBarcodes = dctElement.get("barcodes", [])
+		for dctBarcode in lstPieceBarcodes:
+			lstFlatBarcodes.append(dctBarcode)
+
+	if len(lstFlatBarcodes) == 0:
+		dctResult.op_message = "CreateBarcode returned no piece barcodes"
+		frappe.log_error("DHL CreateBarcode Error", dctResult.op_message)
+	else:
+		dctResult.op_result = True
+		dctResult.op_message = "CreateBarcode succeeded"
+		dctResult.barcodes = lstFlatBarcodes
+
+	return dctResult
+
+
 def _send_create_barcode(dctPayload, dctHeaders, strURL, docDHLSettings):
 	dctResult = frappe._dict({"op_result": False, "op_message": ""})
 
@@ -738,16 +804,8 @@ def _send_create_barcode(dctPayload, dctHeaders, strURL, docDHLSettings):
 
 		if objResponse.status_code == 200:
 			lstData = objResponse.json()
-			if isinstance(lstData, list) and len(lstData) > 0:
-				dctFirst = lstData[0]
-				dctResult.op_result = True
-				dctResult.op_message = "CreateBarcode succeeded"
-				dctResult.invoice_id = dctFirst.get("invoiceId")
-				dctResult.shipment_id = dctFirst.get("shipmentId")
-				dctResult.barcodes = dctFirst.get("barcodes", [])
-			else:
-				dctResult.op_message = "Unexpected response format: " + str(lstData)[:500]
-				frappe.log_error("DHL CreateBarcode Error", dctResult.op_message)
+			dctResult = _flatten_barcode_elements(lstData)
+			dctResult.status_code = 200
 		else:
 			dctResult.op_message = "HTTP {0}: {1}".format(objResponse.status_code, objResponse.text[:500])
 			frappe.log_error("DHL CreateBarcode Error", dctResult.op_message)
@@ -760,7 +818,7 @@ def _send_create_barcode(dctPayload, dctHeaders, strURL, docDHLSettings):
 
 
 def _convert_zpl_to_pdf(lstZpl):
-	strLabelaryURL = "http://api.labelary.com/v1/printers/8dpmm/labels/4x4/0/"
+	strLabelaryURL = "https://api.labelary.com/v1/printers/8dpmm/labels/4x4/0/"
 	dctHeaders = {"accept": "application/pdf", "content-type": "application/x-www-form-urlencoded"}
 	strCombinedZpl = "\n".join(lstZpl)
 	bytPdf = None
@@ -801,25 +859,72 @@ def _attach_pdf_to_dn(strDNName, bytPdf, strFileName):
 	return strFileURL
 
 
+def _delete_stale_label_files(strDNName):
+	dctResult = frappe._dict({"op_result": True, "op_message": "", "intDeleted": 0})
+	strFileNamePattern = "DHL_Etiketi_{0}_%".format(strDNName)
+	try:
+		lstFileNames = frappe.get_all(
+			"File",
+			filters={
+				"attached_to_doctype": "Delivery Note",
+				"attached_to_name": strDNName,
+				"file_name": ("like", strFileNamePattern),
+			},
+			pluck="name",
+		)
+	except Exception:
+		dctResult.op_result = False
+		dctResult.op_message = "Failed to query stale label files"
+		frappe.log_error("DHL Label Cleanup Query Error", frappe.get_traceback())
+		return dctResult
+
+	for strFileName in lstFileNames:
+		try:
+			frappe.delete_doc("File", strFileName, ignore_permissions=True)
+			dctResult.intDeleted += 1
+		except Exception:
+			dctResult.op_message += "Failed to delete {0}; ".format(strFileName)
+			frappe.log_error("DHL Label Cleanup Delete Error", "File: {0}\n{1}".format(strFileName, frappe.get_traceback()))
+
+	return dctResult
+
+
 def _generate_pdfs_for_dn(strDNName):
-	dctResult = frappe._dict({"op_result": True, "op_message": "", "lst_file_urls": []})
+	dctResult = frappe._dict({"op_result": True, "op_message": "", "lst_file_urls": [], "int_deleted": 0})
 	docDN = frappe.get_doc("Delivery Note", strDNName)
 	if not docDN.dhl_barcodes:
 		dctResult.op_result = False
 		dctResult.op_message = "No DHL barcodes found"
 	else:
+		lstConverted = []
 		for docBCRow in docDN.dhl_barcodes:
 			if not docBCRow.barcode_zpl:
 				continue
 			bytPdf = _convert_zpl_to_pdf([docBCRow.barcode_zpl])
-			if bytPdf:
-				strFileName = "DHL_Etiketi_{0}_Parca{1}.pdf".format(strDNName, docBCRow.piece_number)
-				strFileURL = _attach_pdf_to_dn(strDNName, bytPdf, strFileName)
-				if strFileURL:
-					dctResult.lst_file_urls.append(strFileURL)
+			if bytPdf is None:
+				dctResult.op_result = False
+				dctResult.op_message = "PDF conversion failed for piece {0}".format(docBCRow.piece_number)
+				return dctResult
+			lstConverted.append((docBCRow.piece_number, bytPdf))
+
+		if not lstConverted:
+			dctResult.op_result = False
+			dctResult.op_message = "PDF generation failed"
+			return dctResult
+
+		dctDeleteResult = _delete_stale_label_files(strDNName)
+		dctResult.int_deleted = dctDeleteResult.intDeleted
+
+		for dPieceNumber, bytPdf in lstConverted:
+			strFileName = "DHL_Etiketi_{0}_Parca{1}.pdf".format(strDNName, dPieceNumber)
+			strFileURL = _attach_pdf_to_dn(strDNName, bytPdf, strFileName)
+			if strFileURL:
+				dctResult.lst_file_urls.append(strFileURL)
+
 		if not dctResult.lst_file_urls:
 			dctResult.op_result = False
 			dctResult.op_message = "PDF generation failed"
+
 	return dctResult
 
 
