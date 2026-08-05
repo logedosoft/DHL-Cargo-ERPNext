@@ -1,11 +1,13 @@
 # Copyright (c) 2026, Logedosoft Business Solutions and contributors
 # For license information, please see license.txt
 
+import io
 import re
 import frappe, json, requests, base64, time
 from datetime import datetime, timedelta, timezone
 from frappe import msgprint, _
 from frappe.utils import get_datetime_str
+from pypdf import PdfReader, PdfWriter
 from urllib.parse import quote
 
 # Helper function to convert Turkish characters to uppercase for DHL city-district maps
@@ -861,7 +863,7 @@ def _attach_pdf_to_dn(strDNName, bytPdf, strFileName):
 
 def _delete_stale_label_files(strDNName):
 	dctResult = frappe._dict({"op_result": True, "op_message": "", "intDeleted": 0})
-	strFileNamePattern = "DHL_Etiketi_{0}_%".format(strDNName)
+	strFileNamePattern = "DHL_Etiketi_{0}%".format(strDNName)
 	try:
 		lstFileNames = frappe.get_all(
 			"File",
@@ -920,6 +922,20 @@ def _generate_pdfs_for_dn(strDNName):
 			strFileURL = _attach_pdf_to_dn(strDNName, bytPdf, strFileName)
 			if strFileURL:
 				dctResult.lst_file_urls.append(strFileURL)
+
+		# Merge individual PDFs into a single combined PDF
+		if len(lstConverted) > 1:
+			objWriter = PdfWriter()
+			for _dPieceNumber, bytPdf in lstConverted:
+				objReader = PdfReader(io.BytesIO(bytPdf))
+				objWriter.append_pages_from_reader(objReader)
+			with io.BytesIO() as objMerged:
+				objWriter.write(objMerged)
+				bytMergedPdf = objMerged.getvalue()
+			strCombinedName = "DHL_Etiketi_{0}.pdf".format(strDNName)
+			strCombinedURL = _attach_pdf_to_dn(strDNName, bytMergedPdf, strCombinedName)
+			if strCombinedURL:
+				dctResult.lst_file_urls.append(strCombinedURL)
 
 		if not dctResult.lst_file_urls:
 			dctResult.op_result = False
