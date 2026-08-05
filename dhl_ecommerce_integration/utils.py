@@ -669,7 +669,7 @@ def _build_create_order_payload(docDN, lstParcels):
 			"cityName": docAddress.city or "",
 			"districtName": docAddress.county or "",
 			"address": strAddress.strip(),
-			"fullName": docAddress.address_title or "",
+			"fullName": docDN.customer_name or docAddress.address_title or "",
 			"mobilePhoneNumber": strMobile,
 			"bussinessPhoneNumber": "",
 			"homePhoneNumber": "",
