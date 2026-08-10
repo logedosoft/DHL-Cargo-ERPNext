@@ -22,7 +22,7 @@ def test_delete_stale_filter_shape():
 	assert dctCall["pluck"] == "name"
 	assert dctCall["filters"]["attached_to_doctype"] == "Delivery Note"
 	assert dctCall["filters"]["attached_to_name"] == "DN-TEST001"
-	assert "DHL_Etiketi_DN-TEST001_%" == dctCall["filters"]["file_name"][1]
+	assert "DHL_Kargo_Etiketi_DN-TEST001_%" == dctCall["filters"]["file_name"][1]
 
 
 def test_delete_happy_path_three_files():
@@ -135,9 +135,9 @@ def test_full_success_three_pieces_ordering():
 	assert lstCallLog[1] == ("convert", "^XA p2 ^XZ")
 	assert lstCallLog[2] == ("convert", "^XA p3 ^XZ")
 	assert lstCallLog[3] == ("delete", "DN-TEST005")
-	assert lstCallLog[4] == ("attach", "DHL_Etiketi_DN-TEST005_Parca1.pdf")
-	assert lstCallLog[5] == ("attach", "DHL_Etiketi_DN-TEST005_Parca2.pdf")
-	assert lstCallLog[6] == ("attach", "DHL_Etiketi_DN-TEST005_Parca3.pdf")
+	assert lstCallLog[4] == ("attach", "DHL_Kargo_Etiketi_DN-TEST005_Parca1.pdf")
+	assert lstCallLog[5] == ("attach", "DHL_Kargo_Etiketi_DN-TEST005_Parca2.pdf")
+	assert lstCallLog[6] == ("attach", "DHL_Kargo_Etiketi_DN-TEST005_Parca3.pdf")
 
 
 def test_empty_barcode_zpl_rows_skipped():

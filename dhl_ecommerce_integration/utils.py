@@ -863,7 +863,7 @@ def _attach_pdf_to_dn(strDNName, bytPdf, strFileName):
 
 def _delete_stale_label_files(strDNName):
 	dctResult = frappe._dict({"op_result": True, "op_message": "", "intDeleted": 0})
-	strFileNamePattern = "DHL_Etiketi_{0}%".format(strDNName)
+	strFileNamePattern = "DHL_Kargo_Etiketi_{0}%".format(strDNName)
 	try:
 		lstFileNames = frappe.get_all(
 			"File",
@@ -918,7 +918,7 @@ def _generate_pdfs_for_dn(strDNName):
 		dctResult.int_deleted = dctDeleteResult.intDeleted
 
 		for dPieceNumber, bytPdf in lstConverted:
-			strFileName = "DHL_Etiketi_{0}_Parca{1}.pdf".format(strDNName, dPieceNumber)
+			strFileName = "DHL_Kargo_Etiketi_{0}_Parca{1}.pdf".format(strDNName, dPieceNumber)
 			strFileURL = _attach_pdf_to_dn(strDNName, bytPdf, strFileName)
 			if strFileURL:
 				dctResult.lst_file_urls.append(strFileURL)
@@ -932,7 +932,7 @@ def _generate_pdfs_for_dn(strDNName):
 			with io.BytesIO() as objMerged:
 				objWriter.write(objMerged)
 				bytMergedPdf = objMerged.getvalue()
-			strCombinedName = "DHL_Etiketi_{0}.pdf".format(strDNName)
+			strCombinedName = "DHL_Kargo_Etiketi_{0}.pdf".format(strDNName)
 			strCombinedURL = _attach_pdf_to_dn(strDNName, bytMergedPdf, strCombinedName)
 			if strCombinedURL:
 				dctResult.lst_file_urls.append(strCombinedURL)
