@@ -240,17 +240,13 @@ def _dhl_get_with_retry(strURL, dctHeaders, docSettings, strLogTitle):
 
 
 def _update_dn_status(strDNName, strNewStatus, strOldStatus, strReferenceId):
-	frappe.db.set_value(
-		"Delivery Note",
-		strDNName,
-		{
-			"dhl_shipment_status": strNewStatus,
-			"dhl_last_tracked": now_datetime()
-		},
-		update_modified=False
-	)
-
+	#Set status and last tracked time and fire events.
 	if strNewStatus != strOldStatus:
+		docDN = frappe.get_doc("Delivery Note", strDNName)
+		docDN.dhl_shipment_status = strNewStatus
+		docDN.dhl_last_tracked = now_datetime()
+		docDN.save(ignore_permissions=True)
+		
 		frappe.get_doc({
 			"doctype": "Comment",
 			"comment_type": "Info",
@@ -259,6 +255,9 @@ def _update_dn_status(strDNName, strNewStatus, strOldStatus, strReferenceId):
 			"content": "DHL status updated: {0} (ref: {1})".format(strNewStatus, strReferenceId),
 			"comment_email": frappe.session.user or "Administrator"
 		}).insert(ignore_permissions=True)
+	else:
+		#Set last tracked time but don't fire events.
+		frappe.db.set_value("Delivery Note", strDNName, "dhl_last_tracked", now_datetime(), update_modified=False)
 
 
 def _log_skip_error(strReferenceId, strMessage):
