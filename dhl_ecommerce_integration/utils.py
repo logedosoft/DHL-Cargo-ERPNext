@@ -22,6 +22,17 @@ def uppercase_tr(s):
 	return s.translate(tr).upper()
 
 
+def _matches_place(strValue, strName, strExamples):
+	"""Return True when value matches the name or one of the comma-separated examples."""
+	blnMatch = bool(strValue) and uppercase_tr(strName) == strValue
+	if not blnMatch:
+		for strAlias in (strExamples or "").split(","):
+			if strAlias.strip() and uppercase_tr(strAlias.strip()) == strValue:
+				blnMatch = True
+				break
+	return blnMatch
+
+
 def normalize_phone(strRaw):
 	"""Strip every non-digit char and take the last 10 digits. Return whatever remains."""
 	strDigits = re.sub(r"\D", "", strRaw or "")
@@ -328,7 +339,7 @@ def create_recipient(doc, method):
 
 			strCityCode = None
 			for row in docDHLSettings.cities:
-				if row.city_name and docAddress.city and row.city_name == docAddress.city:
+				if _matches_place(docAddress.city, row.city_name, row.examples):
 					strCityCode = row.code
 					break
 
@@ -338,7 +349,7 @@ def create_recipient(doc, method):
 			else:
 				strDistrictCode = None
 				for row in docDHLSettings.districts:
-					if (row.city_code == strCityCode and row.district_name and docAddress.county and row.district_name == docAddress.county):
+					if row.city_code == strCityCode and _matches_place(docAddress.county, row.district_name, row.examples):
 						strDistrictCode = row.code
 						break
 
@@ -614,13 +625,13 @@ def _build_create_order_payload(docDN, lstParcels):
 
 	strCityCode = "0"
 	for row in docDHLSettings.cities:
-		if row.city_name and row.city_name == docAddress.city:
+		if _matches_place(docAddress.city, row.city_name, row.examples):
 			strCityCode = row.code
 			break
 
 	strDistrictCode = "0"
 	for row in docDHLSettings.districts:
-		if row.city_code == strCityCode and row.district_name and row.district_name == docAddress.county:
+		if row.city_code == strCityCode and _matches_place(docAddress.county, row.district_name, row.examples):
 			strDistrictCode = row.code
 			break
 
@@ -1014,13 +1025,13 @@ def _build_create_return_order_payload(strReferenceId, docSO, docAddress, strIte
 
 	strCityCode = "0"
 	for row in docDHLSettings.cities:
-		if row.city_name and row.city_name == docAddress.city:
+		if _matches_place(docAddress.city, row.city_name, row.examples):
 			strCityCode = row.code
 			break
 
 	strDistrictCode = "0"
 	for row in docDHLSettings.districts:
-		if row.city_code == strCityCode and row.district_name and row.district_name == docAddress.county:
+		if row.city_code == strCityCode and _matches_place(docAddress.county, row.district_name, row.examples):
 			strDistrictCode = row.code
 			break
 
@@ -1274,7 +1285,7 @@ def validate_address(doc, method):
 			blnCityValid = False
 			strCityCode = ""
 			for row in docDHLSettings.cities:
-				if row.city_name and row.city_name == strCity:
+				if _matches_place(strCity, row.city_name, row.examples):
 					blnCityValid = True
 					strCityCode = row.code
 					break
@@ -1285,7 +1296,7 @@ def validate_address(doc, method):
 			else:
 				blnCountyValid = False
 				for row in docDHLSettings.districts:
-					if row.city_code == strCityCode and row.district_name and row.district_name == strCounty:
+					if row.city_code == strCityCode and _matches_place(strCounty, row.district_name, row.examples):
 						blnCountyValid = True
 						break
 
