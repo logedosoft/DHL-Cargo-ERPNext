@@ -20,7 +20,7 @@ DHL_STATUS_MAP = {
 	8: "Support Needed",
 }
 
-TERMINAL_STATUSES = ["Delivered", "Delivery Failed", "Returning", "Support Needed", "Not Found"]
+TERMINAL_STATUSES = ["Delivered", "Returning", "Support Needed", "Not Found"]
 
 MAX_RETRY_ATTEMPTS = 3
 BACKOFF_SECONDS = [1, 2, 4]
