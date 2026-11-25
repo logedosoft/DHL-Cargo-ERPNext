@@ -1057,7 +1057,7 @@ def _build_create_return_order_payload(strReferenceId, docSO, docAddress, strIte
 			"smsPreference1": 0,
 			"smsPreference2": 0,
 			"smsPreference3": 0,
-			"paymentType": 1,
+			"paymentType": 2,
 			"deliveryType": 1,
 			"description": "ERPNext Return Order",
 			"marketPlaceShortCode": "",
